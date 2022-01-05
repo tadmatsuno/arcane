@@ -1,5 +1,6 @@
 import numpy as np
 import os
+from numpy.core.fromnumeric import std
 from scipy.interpolate import splev,splrep
 
 import matplotlib.pyplot as plt
@@ -86,7 +87,7 @@ class ContinuumFit:
 
     self.wavelength,self.flux = \
       utils.average_nbins(self.naverage,wavelength,flux)
-    self.use_flag = self._get_region(self.wavelength,self.samples)
+    self.use_flag = utils.get_region_mask(self.wavelength,self.samples)
     outliers = np.array([False]*len(self.wavelength))
     for ii in range(self.niterate):
       self.use_flag = self.use_flag & (~outliers)
@@ -99,79 +100,17 @@ class ContinuumFit:
         y_cont = splev(self.wavelength,self.spline3tck)
       else:
         raise AttributeError('{0:.s} is not implemented'.format(self.func))
-      outliers = self._sigmaclip(\
-        self.wavelength,self.flux,\
-        self.use_flag,y_cont,\
+      outliers = utils.sigmaclip(\
+        self.wavelength,self.flux/y_cont,\
+        self.use_flag,np.ones(len(self.wavelength)),\
         self.grow,\
-        self.low_rej,self.high_rej)
+        self.low_rej,self.high_rej,
+        std_from_central = True) ## Fitting might not be good at the edge
     self.knotsx = spl[0]
     self.knotsy = splev(self.knotsx,spl)
     self.flx_continuum = y_cont
     self.flx_normalized = self.flux / self.flx_continuum
 
-
-  def _get_region(self,x,samples):
-    '''
-    this function returns the mask reflecting the sampling region defined
-    by the samples parameter
-
-    Parameters
-    ----------
-    x : array
-
-    samples : list of list
-    
-    '''
-    if len(samples)==0:
-      return np.isfinite(x)
-    else:
-      return np.any([(x-ss[0])*(x-ss[1])<=0 for ss in samples],axis=0)
-
-  def _sigmaclip(self,xx,yy,use_flag,yfit,grow,low_rej,high_rej):
-    '''
-    This function does a sigma clipping.
-    Note that the edge is not allowed to be removed.
-    When computing the standard deviation, only the central 50% part of 
-    the spectrum will be considered. 
-    Returns an array of bool, which is True if the point is sigma-clipped.
-
-    Parameters
-    ----------
-    xx : array
-
-    yy : array
-
-    use_flag : mask 
-      only points where use_mask is True are considered
-
-    yfit : array
-      results of fitting to yy
-
-    grow : float 
-      in wavelength unit.
-      Points within "grow" from removed points in sigma-clipping will 
-      also be removed
-    
-    low_rej, high_rej : float, float
-      Threshold for sigma-clipping. 
-
-    Returns
-    -------
-    removemask : array
-
-
-    '''
-    ynorm = yy/yfit
-    quat = np.sum(use_flag)//4 
-    ystd = np.nanstd(ynorm[use_flag][quat:-quat]-1.0,ddof=1)*\
-           np.sqrt(np.nanmax(yfit)/np.maximum(yfit,1.0e-10))
-    outside = ((ynorm-1.0) < (-ystd*low_rej)) | ((ynorm-1.0) > (ystd*high_rej))
-    xoutside = xx[outside]
-    xoutside = xoutside.repeat(len(xx)).reshape(len(xoutside),len(xx))
-    removemask = np.any(((xoutside-grow)<xx)&(xx<(xoutside+grow)),axis=0)
-    removemask[np.min(np.nonzero(use_flag))] = False
-    removemask[np.max(np.nonzero(use_flag))] = False
-    return removemask
 
   def _spline3fit(self,xx,yy,dx_knots):
     '''
@@ -243,38 +182,6 @@ class ContinuumFit:
       (knots[1:].repeat(len(xx)).reshape(nknots-1,npoint)-xx))>=0,\
       axis=1)
     return npt_btw_knots
-
-
-def textsamples(samples,reverse=False):
-  '''
-  Convert the sampling region from list to str, or from str to list
-
-  Parameters
-  ----------
-  samples : list of list with a length of 2 or str
-
-  reverse : bool
-    If True, string to list
-    If False, list to string
-  '''
-  if reverse:
-    if samples.count('\n') == 0:
-      samples = [samples]
-    else:
-      samples = samples.split('\n')
-    outpair = []
-    for ss in samples:
-      if len(ss.lstrip().rstrip()) == 0:
-        continue
-      ss = ss.lstrip().rstrip()
-      outpair.append([float(ss.split()[0]),float(ss.split()[1])])
-    return outpair
-  else:
-    outtxt = ''
-    for ss in samples:
-      outtxt += '{0:10.3f} {1:10.3f}\n'.format(ss[0],ss[1])
-    return outtxt
-
 
 class PlotCanvas(FigureCanvas):
   '''
@@ -367,7 +274,7 @@ class MainWindow(QWidget,Ui_Dialog):
     self.ui.edit_grow.setText(\
       '{0:.3f}'.format(self.CFit.grow))
     self.ui.edit_samples.setPlainText(\
-      textsamples((self.CFit.samples)))
+      utils.textsamples((self.CFit.samples)))
 
     self.ui.main_figure.layout
     self.canvas  =  PlotCanvas(self.ui.left_grid,self.ui.main_figure)
@@ -634,7 +541,7 @@ class MainWindow(QWidget,Ui_Dialog):
         self.CFit.samples = []
         self.CFit.samples = self.show_selected_region(self.CFit.samples)
         self.ui.edit_samples.setPlainText(\
-          textsamples(self.CFit.samples))
+          utils.textsamples(self.CFit.samples))
       elif event.key == 'n':
         self.moveon_done()
       elif event.key == 'f':
@@ -648,7 +555,7 @@ class MainWindow(QWidget,Ui_Dialog):
         self.CFit.samples.append([x1,x2])
         self.CFit.samples = self.show_selected_region(self.CFit.samples)
         self.ui.edit_samples.setPlainText(\
-          textsamples(self.CFit.samples))
+          utils.textsamples(self.CFit.samples))
       self.tmp_data['lvx1'].remove()
       self._clear_state()
 
@@ -706,11 +613,11 @@ class MainWindow(QWidget,Ui_Dialog):
           self.ui.edit_niter.setText(self.temp_text)
       elif source is self.ui.edit_samples:
         try:
-          ss = textsamples(new_text,reverse=True)
+          ss = utils.textsamples(new_text,reverse=True)
           ss_sorted = self.show_selected_region(ss)
           self.CFit.samples = ss_sorted
           self.ui.edit_samples.setPlainText(\
-            textsamples(ss_sorted))
+            utils.textsamples(ss_sorted))
         except:
           print('Input error')
           self.ui.edit_samples.setPlainText(self.temp_text)
@@ -887,7 +794,7 @@ class MainWindow(QWidget,Ui_Dialog):
         self.CFit.samples = []
         self.CFit.samples = self.show_selected_region(self.CFit.samples)
         self.ui.edit_samples.setPlainText(\
-          textsamples(self.CFit.samples))
+          utils.textsamples(self.CFit.samples))
         self.input_data(\
           self.multi_wavelength[self.current_order],
           self.multi_flux[self.current_order],)

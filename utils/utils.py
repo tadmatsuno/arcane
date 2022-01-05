@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.interpolate import splrep, splint
+from scipy.special import voigt_profile
 
 
 def get_dx(x):
@@ -107,3 +108,184 @@ def x_sorted(xx,yy):
     return (xx[argxx],)+tuple([y[argxx] for y in yy])
   except:
     return xx[argxx],yy[argxx]
+
+def get_region_mask(x,samples):
+  '''
+  this function returns the mask reflecting the sampling region defined
+  by the samples parameter
+
+  Parameters
+  ----------
+  x : array
+
+  samples : list of list
+
+  '''
+  if len(samples)==0:
+    return np.isfinite(x)
+  else:
+    return np.any([(x-ss[0])*(x-ss[1])<=0 for ss in samples],axis=0)
+
+def sigmaclip(xx,yy,use_flag,yfit,grow,low_rej,high_rej,
+  std_from_central = False):
+  '''
+  This function does a sigma clipping.
+  Note that the edge is not allowed to be removed.
+  When computing the standard deviation, only the central 50% part of 
+  the spectrum will be considered. 
+  Returns an array of bool, which is True if the point is sigma-clipped.
+
+  Parameters
+  ----------
+  xx : array
+
+  yy : array
+
+  use_flag : mask 
+    only points where use_mask is True are considered
+
+  yfit : array
+    results of fitting to yy
+
+  grow : float 
+    in wavelength unit.
+    Points within "grow" from removed points in sigma-clipping will 
+    also be removed
+  
+  low_rej, high_rej : float, float
+    Threshold for sigma-clipping. 
+
+  std_from_central : bool
+    if True, only central 50% points will be used to estimate residual scatter
+
+  Returns
+  -------
+  removemask : array
+
+
+  '''
+  resid = yy-yfit
+  if std_from_central:
+    quat = np.sum(use_flag)//4 
+    ystd = np.nanstd(resid[use_flag][quat:-quat],ddof=1)
+  else:
+    ystd = np.nanstd(resid[use_flag],ddof=1)
+
+  outside = (resid < (-ystd*low_rej)) | (resid > (ystd*high_rej))
+  xoutside = xx[outside]
+  xoutside = xoutside.repeat(len(xx)).reshape(len(xoutside),len(xx))
+  removemask = np.any(((xoutside-grow)<xx)&(xx<(xoutside+grow)),axis=0)
+  removemask[np.min(np.nonzero(use_flag))] = False
+  removemask[np.max(np.nonzero(use_flag))] = False
+  return removemask
+
+def get_glFWHM(fwhm,flfwhm):
+  '''
+  get fwhms of Gaussian and Lorenzian components from FWHM and flFWHM
+
+  Parameters
+  ----------
+  fwhm : float
+  
+  flfwhm :float
+    FWHM_L/FWHM = 2*gamma/FWHM
+
+  '''
+  lfwhm = fwhm*flfwhm
+  gfwhm = np.sqrt(\
+    np.maximum(1.0e-10,(fwhm - 0.5346*lfwhm)**2.0-0.2166*lfwhm**2.0)\
+  )
+  return gfwhm,lfwhm
+
+def voigts_multi(x0s,depths,sigmas,gammas):
+  '''
+  Returns sum of multiple Voigt profiles.
+
+  Parameters
+  ----------
+  x0s : float or 1d-array
+    the central wavelength of the lines 
+
+  depths : float or 1d-array
+    the depths of the lines 
+
+  sigmas : float or 1d-array
+    sigma in Gaussian components 
+
+  gammas : float or 1d-array
+    gamma in Lorenzian components
+
+  Returns
+  -------
+  function that returns flux at given position
+    
+  '''
+  x0s = np.atleast_1d(x0s)
+  depths = np.atleast_1d(depths)
+  sigmas = np.atleast_1d(sigmas)
+  gammas = np.atleast_1d(gammas)
+  return lambda x:\
+    np.sum([dep*voigt_profile(x-x0,ss,ll)/voigt_profile(0,ss,ll) \
+      for x0,dep,ss,ll in zip(x0s,depths,sigmas,gammas)],axis=0)
+
+def voigts_multi2(x0s,depths,fwhms,flfwhm):
+  '''
+  Returns sum of multiple Voigt profiles.
+
+  Parameters
+  ----------
+  x0s : float or 1d-array
+    the central wavelength of the lines 
+
+  depths : float or 1d-array
+    the depths of the lines 
+
+  fwhms : float or 1d-array
+    FWHM of the lines 
+
+  flfwhm : float or 1d-array
+    FWHM_L/FWHM = 2*gamma/FWHM
+
+  Returns
+  -------
+  function that returns flux at given position
+    
+  '''    
+  gfwhm,lfwhm = get_glFWHM(fwhms,flfwhm)
+  gamma = lfwhm/2.0
+  sigma = gfwhm/2.3548200450309493
+  return voigts_multi(x0s,depths,sigma,gamma)
+
+def textsamples(samples,reverse=False):
+  ''' 
+  Convert 2 x N sample region definition to text 
+  or vice versa. 
+
+  Parameters
+  ----------
+  samples : 2 x N list, or str
+    An example for the list is [[5000,5100], [5150, 5250]]
+    An example for str is 
+      5000 5100
+      5150 5250
+  reverse : bool
+    If True, the conversion is from text to list
+  '''
+
+  if reverse:
+    if samples.count('\n') == 0:
+      samples = [samples]
+    else:
+      samples = samples.split('\n')
+    outpair = []
+    for ss in samples:
+      if len(ss.lstrip().rstrip()) == 0:
+        continue
+      ss = ss.lstrip().rstrip()
+      outpair.append([float(ss.split()[0]),float(ss.split()[1])])
+    return outpair
+  else:
+    outtxt = ''
+    for ss in samples:
+      outtxt += '{0:10.3f} {1:10.3f}\n'.format(ss[0],ss[1])
+    return outtxt
