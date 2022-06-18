@@ -726,9 +726,10 @@ class MainWindow(QWidget,Ui_Dialog):
     output : str
       the filename of the output file
     '''
-    fweight = lambda n: np.where(np.arange(0,n)<(n/4),0.0,\
-      np.where(np.arange(0,n)>(3.0*n/4),1.0,\
-      (np.arange(0,n)-n/4)*2/n))
+    ## Weight of the i+1 order blaze function in the region overlaping with i order
+    fweight = lambda n: np.where(np.arange(0,n)<(n/4),0, # 0 at left 
+      np.where(np.arange(0,n)>(3.0*n/4),1.0, # stays 1 at right
+      (np.arange(0,n)-n/4)*2/n)) # 1->0 in between
       
     nblock = len(self.multi_wavelength)
     blaze1d = np.zeros(len(self.long1d_wavelength))
@@ -747,12 +748,16 @@ class MainWindow(QWidget,Ui_Dialog):
       blaze1d[n1+nn[0]:n2+nn[1]] = \
         self.multi_blaze[ii][nn[0]:len(self.multi_wavelength[ii])+nn[1]]
       if ii != 0:      ## For region overlapping with previous section
-        blaze1d[n1:n1+nn[0]] = \
+        blaze1d[n1:n1+nn[0]] += \
           self.multi_blaze[ii][0:nn[0]]*fweight(nn[0])
+        #print('should go from 0 to 1')
+        #print(fweight(nn[0]))
       if ii+1 != nblock: ## For region overlapping with next section
-        blaze1d[n2+nn[1]:n2] = \
+        blaze1d[n2+nn[1]:n2] += \
           self.multi_blaze[ii][len(self.multi_wavelength[ii])+nn[1]:]*\
               (1.0-fweight(np.abs(nn[1])))
+        #print('should go from 1 to 0')
+        #print(1.0-fweight(np.abs(nn[1])))
     self.long1d_normalized = self.long1d_flux / blaze1d
     print('Continuum fitting for a spectrum in long1d format was completed')
     print(f'The resut is saved as {output}')
