@@ -647,6 +647,10 @@ class OneLine:
         grow = self.grow_line) 
 
 class PlotCanvas(FigureCanvas):
+  '''
+  Class for main window
+  '''
+
   def __init__(self,parent,layout):
     self.fig,self.axes = plt.subplots(2,1,\
       gridspec_kw={'hspace':0.,'height_ratios':[3.,1.]},\
@@ -658,48 +662,48 @@ class PlotCanvas(FigureCanvas):
     self.axes[0].set_ylabel('flux')
     self.axes[1].set_ylabel('norm - fit')
 
-    self.line_obs_axis0, = self.axes[0].plot([0],[0],'C7-',lw=0.5)
-    self.pt_use_axis0, = self.axes[0].plot([0],[0],'C0o',ms=2.0)
-    self.line_cont_axis0, = self.axes[0].plot([0],[0],'C1--',lw=1.0)
-    self.line_allline_axis0, = self.axes[0].plot([0],[0],'C1-',lw=1.0)
-    self.line_eachline_axis0, = self.axes[0].plot([0],[0],'C1-',lw=0.5)
-    self.line_geachline_axis0, = self.axes[0].plot([0],[0],'C1--',lw=0.5)
+    self.line_obs_axis0, = self.axes[0].plot([0],[0],'C7-',lw=0.5) # observed spectrum
+    self.pt_use_axis0, = self.axes[0].plot([0],[0],'C0o',ms=2.0) # data points used 
+    self.line_cont_axis0, = self.axes[0].plot([0],[0],'C1--',lw=1.0) # local continuum 
+    self.line_allline_axis0, = self.axes[0].plot([0],[0],'C1-',lw=1.0) # the result of fit
+    self.line_eachline_axis0, = self.axes[0].plot([0],[0],'C1-',lw=0.5) # every line in the fit
+    self.line_geachline_axis0, = self.axes[0].plot([0],[0],'C1--',lw=0.5) # gaussian component of the every line
     self.region_cont_2sigma_axis0 = \
-      self.axes[0].fill_between([0.0],[0.0],[0.0],facecolor='C7',alpha=0.3)
+      self.axes[0].fill_between([0.0],[0.0],[0.0],facecolor='C7',alpha=0.3) # continuum uncertainty
     self.region_cont_2sigma_axis1 = \
-      self.axes[1].fill_between([0.0],[0.0],[0.0],facecolor='C7',alpha=0.3)
+      self.axes[1].fill_between([0.0],[0.0],[0.0],facecolor='C7',alpha=0.3) # continuum uncertainty
     self.region_cont_2sigma_label_axis0 = \
       self.axes[0].text(0.,0.,'cont (2sig)',\
         verticalalignment='top',horizontalalignment='left',
-        color='C7')
-    self.line_obs_axis1, = self.axes[1].plot([0],[0],'C7-',lw=0.5)
-    self.pt_use_axis1, = self.axes[1].plot([0],[0],'C0o',ms=2.0)
-    self.zero_axis1, = self.axes[1].plot([0],[0],'C1--',ms=1.0)
+        color='C7')  # continuum uncertainty text
+    self.line_obs_axis1, = self.axes[1].plot([0],[0],'C7-',lw=0.5)  # residual plot
+    self.pt_use_axis1, = self.axes[1].plot([0],[0],'C0o',ms=2.0) # data points used 
+    self.zero_axis1, = self.axes[1].plot([0],[0],'C1--',ms=1.0) # zero in the residual plot
 
     self.cursorx = self.axes[0].axvline(x=0,\
-      linestyle='-',color='C7',lw=0.5)
+      linestyle='-',color='C7',lw=0.5) # mouse cursor x
     self.cursory = self.axes[0].axhline(y=0,\
-      linestyle='-',color='C7',lw=0.5)
+      linestyle='-',color='C7',lw=0.5) # mouse curor y
 
 
     self.fig.canvas.mpl_connect('motion_notify_event',self.mouse_move)
     self.txt = self.axes[0].text(0.0,0.0,'',\
       transform=self.fig.transFigure,
-      horizontalalignment='left',verticalalignment='bottom')
+      horizontalalignment='left',verticalalignment='bottom') # Mouse cursor position text
     self.mode_txt = self.axes[0].text(1.0,1.0,'Normal',\
       transform=self.fig.transFigure,
       fontsize='x-large',color='k',
-      horizontalalignment='right',verticalalignment='top')
+      horizontalalignment='right',verticalalignment='top') # Display current mode
 
     self.setFocusPolicy(Qt.ClickFocus)
     self.setFocus()
-    toolbar = NavigationToolbar(self ,parent)
+    self.toolbar = NavigationToolbar(self ,parent)
     layout.addWidget(self.toolbar)
 
     self.fig.tight_layout()
     self.updateGeometry()
 
-  def mouse_move(self,event):
+  def mouse_move(self,event): # capture movement of mouse cursor
     x,y = event.xdata,event.ydata
     self.cursorx.set_xdata(x)
     if event.inaxes == self.axes[0]:
@@ -710,28 +714,12 @@ class PlotCanvas(FigureCanvas):
       self.txt.set_text('x={0:10.3f}    y={1:10.5f}'.format(x,y))
     self.draw()
 
-def textsamples(samples,reverse=False):
-  if reverse:
-    if samples.count('\n') == 0:
-      samples = [samples]
-    else:
-      samples = samples.split('\n')
-    outpair = []
-    for ss in samples:
-      if len(ss.lstrip().rstrip()) == 0:
-        continue
-      ss = ss.lstrip().rstrip()
-      outpair.append([float(ss.split()[0]),float(ss.split()[1])])
-    return outpair
-  else:
-    outtxt = ''
-    for ss in samples:
-      outtxt += '{0:10.3f} {1:10.3f}\n'.format(ss[0],ss[1])
-    return outtxt
-
 
 
 class MainWindow(QWidget,Ui_Dialog):
+  '''
+  Class for main window
+  '''
   def __init__(self,parent=None):
     super(MainWindow,self).__init__(parent)
     self.ui = Ui_Dialog()
@@ -740,36 +728,36 @@ class MainWindow(QWidget,Ui_Dialog):
     self.oneline = OneLine()
     self.canvas  =  PlotCanvas(self.ui.left_grid,self.ui.main_figure)
     
-    self.ui.inwvls = [self.ui.inwvl1,self.ui.inwvl2,self.ui.inwvl3,self.ui.inwvl4,self.ui.inwvl5]
-    self.ui.fix_dwvls = [self.ui.fix_dwvl1,self.ui.fix_dwvl2,self.ui.fix_dwvl3,self.ui.fix_dwvl4,self.ui.fix_dwvl5]
-    self.ui.edit_dwvls = [self.ui.edit_dwvl1,self.ui.edit_dwvl2,self.ui.edit_dwvl3,self.ui.edit_dwvl4,self.ui.edit_dwvl5]
-    self.ui.fix_fwhms = [self.ui.fix_fwhm1,self.ui.fix_fwhm2,self.ui.fix_fwhm3,self.ui.fix_fwhm4,self.ui.fix_fwhm5]
-    self.ui.edit_fwhms = [self.ui.edit_fwhm1,self.ui.edit_fwhm2,self.ui.edit_fwhm3,self.ui.edit_fwhm4,self.ui.edit_fwhm5]
-    self.ui.fix_lfwhms = [self.ui.fix_lfwhm1,self.ui.fix_lfwhm2,self.ui.fix_lfwhm3,self.ui.fix_lfwhm4,self.ui.fix_lfwhm5]
+    self.ui.inwvls = [self.ui.inwvl1,self.ui.inwvl2,self.ui.inwvl3,self.ui.inwvl4,self.ui.inwvl5] # input wavelengths
+    self.ui.fix_dwvls = [self.ui.fix_dwvl1,self.ui.fix_dwvl2,self.ui.fix_dwvl3,self.ui.fix_dwvl4,self.ui.fix_dwvl5] # check box if wavelength shift is fixed to zero
+    self.ui.edit_dwvls = [self.ui.edit_dwvl1,self.ui.edit_dwvl2,self.ui.edit_dwvl3,self.ui.edit_dwvl4,self.ui.edit_dwvl5] # wavelength shift 
+    self.ui.fix_fwhms = [self.ui.fix_fwhm1,self.ui.fix_fwhm2,self.ui.fix_fwhm3,self.ui.fix_fwhm4,self.ui.fix_fwhm5] # check box if fwhm is fixed
+    self.ui.edit_fwhms = [self.ui.edit_fwhm1,self.ui.edit_fwhm2,self.ui.edit_fwhm3,self.ui.edit_fwhm4,self.ui.edit_fwhm5] # fwhms
+    self.ui.fix_lfwhms = [self.ui.fix_lfwhm1,self.ui.fix_lfwhm2,self.ui.fix_lfwhm3,self.ui.fix_lfwhm4,self.ui.fix_lfwhm5] # check box if FWHM_L/FWHM is fixed to zero
     
-    self.ui.button_fit.installEventFilter(self)
-    self.ui.button_draw.installEventFilter(self)
-    self.ui.edit_naverage.installEventFilter(self)
-    self.ui.edit_lowrej_cont.installEventFilter(self)
-    self.ui.edit_highrej_cont.installEventFilter(self)
-    self.ui.edit_niter_cont.installEventFilter(self)
-    self.ui.edit_samples_cont.installEventFilter(self)
-    self.ui.edit_lowrej_line.installEventFilter(self)
-    self.ui.edit_highrej_line.installEventFilter(self)
-    self.ui.edit_niter_line.installEventFilter(self)
-    self.ui.edit_samples_line.installEventFilter(self)
-    self.ui.fix_a0.installEventFilter(self)
-    self.ui.fix_a1.installEventFilter(self)
-    self.ui.edit_a0.installEventFilter(self)
-    self.ui.edit_a1.installEventFilter(self)
-    self.ui.share_dwvl.installEventFilter(self)
-    self.ui.share_fwhm.installEventFilter(self)
-    [ui.installEventFilter(self) for ui in self.ui.inwvls]
-    [ui.installEventFilter(self) for ui in self.ui.fix_dwvls]
-    [ui.installEventFilter(self) for ui in self.ui.edit_dwvls]
-    [ui.installEventFilter(self) for ui in self.ui.fix_fwhms]
-    [ui.installEventFilter(self) for ui in self.ui.edit_fwhms]
-    [ui.installEventFilter(self) for ui in self.ui.fix_lfwhms]
+    self.ui.button_fit.installEventFilter(self) # button for refit 
+    self.ui.button_draw.installEventFilter(self) # button for draw
+    self.ui.edit_naverage.installEventFilter(self) # textbox for binning
+    self.ui.edit_lowrej_cont.installEventFilter(self) # textbox for lowrej threshold in continuum fitting
+    self.ui.edit_highrej_cont.installEventFilter(self) # textbox for highrej threshold in continuum fitting
+    self.ui.edit_niter_cont.installEventFilter(self) # text box for number of sigma-clipping in continuum fitting
+    self.ui.edit_samples_cont.installEventFilter(self) # text box for sampling range in continuum fitting
+    self.ui.edit_lowrej_line.installEventFilter(self) # textbox for lowrej threshold in line fitting
+    self.ui.edit_highrej_line.installEventFilter(self) # textbox for highrej threshold in line fitting
+    self.ui.edit_niter_line.installEventFilter(self) # textbox for number of sigma-clipping in line fitting
+    self.ui.edit_samples_line.installEventFilter(self) # text box for sampling range in line fitting
+    self.ui.fix_a0.installEventFilter(self) # check box if continuum level is fixed
+    self.ui.fix_a1.installEventFilter(self) # check box if continuum slope is fixed
+    self.ui.edit_a0.installEventFilter(self) # text box for continuum level
+    self.ui.edit_a1.installEventFilter(self) # text box for continuum slope
+    self.ui.share_dwvl.installEventFilter(self) # check box if wavelength shift is shared for all the lines
+    self.ui.share_fwhm.installEventFilter(self) # check box if fwhm is shared for all the lines
+    [ui1.installEventFilter(self) for ui1 in self.ui.inwvls]
+    [ui1.installEventFilter(self) for ui1 in self.ui.fix_dwvls]
+    [ui1.installEventFilter(self) for ui1 in self.ui.edit_dwvls]
+    [ui1.installEventFilter(self) for ui1 in self.ui.fix_fwhms]
+    [ui1.installEventFilter(self) for ui1 in self.ui.edit_fwhms]
+    [ui1.installEventFilter(self) for ui1 in self.ui.fix_lfwhms]
 
     self.reflect_ui(fit_result=False)
 
@@ -778,15 +766,23 @@ class MainWindow(QWidget,Ui_Dialog):
 
 
   def reflect_ui(self,fit_result=True):
+    '''
+    This is to reflect internally-stored value to textboxes and checkboxes
+
+    Parameters
+    ----------
+    fit_result : bool
+      If fitting result should be reflected to ui
+    '''
     self.ui.edit_naverage.setText('{0:d}'.format(self.oneline.n_average))
     self.ui.edit_lowrej_cont.setText('{0:.2f}'.format(self.oneline.lowrej_continuum))
     self.ui.edit_highrej_cont.setText('{0:.2f}'.format(self.oneline.highrej_continuum))
     self.ui.edit_niter_cont.setText('{0:d}'.format(self.oneline.niter_continuum))
-    self.ui.edit_samples_cont.setPlainText(textsamples(self.oneline.samples_continuum))
+    self.ui.edit_samples_cont.setPlainText(utils.textsamples(self.oneline.samples_continuum))
     self.ui.edit_lowrej_line.setText('{0:.2f}'.format(self.oneline.lowrej_line))
     self.ui.edit_highrej_line.setText('{0:.2f}'.format(self.oneline.highrej_line))
     self.ui.edit_niter_line.setText('{0:d}'.format(self.oneline.niter_line))
-    self.ui.edit_samples_line.setPlainText(textsamples(self.oneline.samples_line))
+    self.ui.edit_samples_line.setPlainText(utils.textsamples(self.oneline.samples_line))
 
     if fit_result:
       self.ui.edit_a0.setText('{0:.3f}'.format(self.oneline.continuum.a0))
@@ -821,7 +817,7 @@ class MainWindow(QWidget,Ui_Dialog):
           getattr(self.ui,'edit_lfwhm{0:1d}'.format(ii+1)).setText('')
           getattr(self.ui,'edit_EW{0:1d}'.format(ii+1)).setText('')
           getattr(self.ui,'fix_fwhm{0:1d}'.format(ii+1)).setChecked(False)
-          getattr(self.ui,'fix_lfwhm{0:1d}'.format(ii+1)).setChecked(True)
+          getattr(self.ui,'fix_lfwhm{0:1d}'.format(ii+1)).setChecked(False)
           getattr(self.ui,'fix_dwvl{0:1d}'.format(ii+1)).setChecked(False)
 
 
@@ -831,6 +827,10 @@ class MainWindow(QWidget,Ui_Dialog):
       self.ui.share_fwhm.setChecked(self.oneline.voigt.share_fwhm)
 
   def draw_fig(self):
+    '''
+    Draw fitting results
+
+    '''
     if not hasattr(self.oneline,'wavelength'):
       raise AttributeError('setup Oneline first!')
     ## observed
@@ -859,7 +859,7 @@ class MainWindow(QWidget,Ui_Dialog):
       self.oneline.voigt.fwhm[ii],\
       self.oneline.voigt.flfwhm[ii])(self.oneline.wavelength))\
       for ii in range(self.oneline.voigt.nline)]))
-    ## show each component assuming they are gaussian
+    ## show each component neglecting their lorenzian components
     self.canvas.line_geachline_axis0.set_xdata(\
       np.hstack([self.oneline.wavelength]*self.oneline.voigt.nline))
     self.canvas.line_geachline_axis0.set_ydata(\
@@ -871,7 +871,7 @@ class MainWindow(QWidget,Ui_Dialog):
       self.oneline.voigt.fwhm[ii],\
       0.0)(self.oneline.wavelength))\
       for ii in range(self.oneline.voigt.nline)]))
-    ## second axis
+    ## second axis, residual plot
     self.canvas.line_obs_axis1.set_xdata(self.oneline.wavelength)
     self.canvas.pt_use_axis1.set_xdata(\
       self.oneline.wavelength[self.oneline.voigt.use_flag])
@@ -898,7 +898,7 @@ class MainWindow(QWidget,Ui_Dialog):
         -2.0*self.oneline.continuum.std/self.oneline.continuum.flux_cont,\
         2.0*self.oneline.continuum.std/self.oneline.continuum.flux_cont,\
         facecolor='C7',alpha=0.3)
-    ## define limits
+    ## define xy limits
     wc0 = self.oneline.voigt.center[0]+self.oneline.voigt.dwvl[0]
     fwhm0 = np.maximum(self.oneline.voigt.fwhm[0],0.01)
     if len(self.oneline.samples_continuum)>0:
@@ -932,6 +932,9 @@ class MainWindow(QWidget,Ui_Dialog):
     self.canvas.draw()
 
   def done(self):
+    '''
+    This function shows a textbox that indicates that all the lines have been measured
+    '''
     self.canvas.axes[0].text(0.5,0.5,'Done! \n Close the window',
       bbox=dict(facecolor='white', alpha=0.5),
       transform=self.canvas.fig.transFigure,
@@ -1158,21 +1161,21 @@ class MainWindow(QWidget,Ui_Dialog):
           self.ui.edit_fwhms[idx].setText(self.temp_text)     
       elif source is self.ui.edit_samples_cont:
         try:
-          ss = textsamples(new_text,reverse=True)
+          ss = utils.textsamples(new_text,reverse=True)
           ss_sorted = self.show_selected_region(ss,continuum=True)
           self.oneline.samples_continuum = ss_sorted
           self.ui.edit_samples_cont.setPlainText(\
-            textsamples(ss_sorted))
+            utils.textsamples(ss_sorted))
         except:
           print('Input error')
           self.ui.edit_samples_cont.setPlainText(self.temp_text)
       elif source is self.ui.edit_samples_line:
         try:
-          ss = textsamples(new_text,reverse=True)
+          ss = utils.textsamples(new_text,reverse=True)
           ss_sorted = self.show_selected_region(ss,continuum=False)
           self.oneline.samples_line = ss_sorted
           self.ui.edit_samples_line.setPlainText(\
-            textsamples(ss_sorted))
+            utils.textsamples(ss_sorted))
         except:
           print('Input error')
           self.ui.edit_samples_line.setPlainText(self.temp_text)
@@ -1245,11 +1248,11 @@ class MainWindow(QWidget,Ui_Dialog):
     _ = self.show_selected_region(\
       self.oneline.samples_continuum,continuum=True)
     self.ui.edit_samples_cont.setPlainText(\
-        textsamples(self.oneline.samples_continuum))
+        utils.textsamples(self.oneline.samples_continuum))
     _ = self.show_selected_region(\
       self.oneline.samples_line,continuum=False)
     self.ui.edit_samples_line.setPlainText(\
-        textsamples(self.oneline.samples_line))
+        utils.textsamples(self.oneline.samples_line))
 
   def on_press(self,event):
     print(event.key)
@@ -1319,24 +1322,24 @@ class MainWindow(QWidget,Ui_Dialog):
           self.oneline.samples_line = \
             self.show_selected_region([],continuum=False)
           self.ui.edit_samples_line.setPlainText(\
-            textsamples(self.oneline.samples_line))
+            utils.textsamples(self.oneline.samples_line))
         elif event.key =='c':
           self.oneline.samples_continuum = \
             self.show_selected_region([],continuum=True)
           self.ui.edit_samples_cont.setPlainText(\
-            textsamples(self.oneline.samples_continuum))
+            utils.textsamples(self.oneline.samples_continuum))
         elif event.key == 'r':
           self.oneline.samples_continuum = \
           self.show_selected_region(\
              self.oneline.samples_continuum[:-1],continuum=True)
           self.ui.edit_samples_cont.setPlainText(\
-            textsamples(self.oneline.samples_continuum))
+            utils.textsamples(self.oneline.samples_continuum))
         elif event.key == 'b':
           self.oneline.samples_continuum = \
           self.show_selected_region(\
              self.oneline.samples_continuum[1:],continuum=True)
           self.ui.edit_samples_cont.setPlainText(\
-            textsamples(self.oneline.samples_continuum))
+            utils.textsamples(self.oneline.samples_continuum))
         self._clear_state()
       elif self.mpl_status == 'y':
         if event.key == 'y':
@@ -1350,13 +1353,13 @@ class MainWindow(QWidget,Ui_Dialog):
           self.oneline.samples_line = \
             self.show_selected_region(self.oneline.samples_line,continuum=False)
           self.ui.edit_samples_line.setPlainText(\
-            textsamples(self.oneline.samples_line))
+            utils.textsamples(self.oneline.samples_line))
         elif (event.key=='c') and (x2 is not None):
           self.oneline.samples_continuum.append([x1,x2])
           self.oneline.samples_continuum = \
             self.show_selected_region(self.oneline.samples_continuum,continuum=True)
           self.ui.edit_samples_cont.setPlainText(\
-            textsamples(self.oneline.samples_continuum))
+            utils.textsamples(self.oneline.samples_continuum))
         self.tmp_data['lvx1'].remove()
         self._clear_state()
 
