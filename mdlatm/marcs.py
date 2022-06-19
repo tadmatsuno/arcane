@@ -1,7 +1,7 @@
 import numpy as np
 import pandas
 from arcane.utils import utils
-
+from scipy.interpolate import CubicSpline
 
 data_dir = '/mnt/d/model_atm/MARCS/'
 with open(data_dir+'MARCS_avai.dat') as fout:
@@ -15,9 +15,94 @@ with open(data_dir+'MARCS_avai.dat') as fout:
     grid_value[key] = val
 
   
-grid = pandas.read_csv(data_dir+'MARCS_grid.csv',index_col=0)
+grid = pandas.read_csv(data_dir+'MARCS_grid.csv',index_col=None)
 
-def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False):
+
+def get_filename1(geometry,teff,logg,mh,alpha=None):
+  assert geometry in ['p','s'], 'Geometry has to be either p or s.'
+  if not alpha is None:
+    g1 = grid[(grid['geometry']==geometry)&(grid['teff']==teff)&(grid['logg']==logg)&\
+      (grid['mh']==mh)&(grid['alphafe']==alpha)]
+
+  else:
+    g1 = grid[(grid['geometry']==geometry)&(grid['teff']==teff)&(grid['logg']==logg)&\
+      (grid['mh']==mh)&(grid['comp']=='st')]
+  assert len(g1)==1,f'Cannot identify unique model {teff} {logg} {mh} {alpha}'
+  return data_dir+g1.iloc[0]['filename']
+
+
+def resample_model(model,lgtauRnew):
+  new_model = model.copy()
+  new_model['ndepth'] = len(lgtauRnew)
+  new_model['lgTauR'] = lgtauRnew
+  for key in model.keys():
+    if (type(model[key]) is np.ndarray) and (key != 'lgTauR'):
+      cs = CubicSpline(model['lgTauR'],model[key])
+      new_model[key] = cs(new_model['lgTauR'])
+  return new_model
+      
+
+
+def interp_model2(model1,model2,w2,alpha={},\
+  interp_in_log=['Pe','Pg','Prad','Pturb','KappaRoss','Density','RHOX']):
+  '''
+    model1 needs to be ''the inferior'' model 
+  ''' 
+  assert model1['geometry']==model2['geometry'],\
+    'Interpolation error, model geometry mismatch'
+  assert model1['modeltype']==model2['modeltype'],\
+    'Interpolation error, modeltype mismatch'
+  model_new = {}
+  model_new['modeltype'] = model1['modeltype']
+  model_new['geometry'] = model1['geometry']
+
+  ## No need to resample if lgTauR are the same
+  tauR1 = model1['lgTauR']
+  tauR2 = model2['lgTauR']
+  is_resample = True
+  if len(tauR1)==len(tauR2):
+    if np.all(tauR1==tauR2):
+      is_resample = False
+      model_new['lgTauR'] = tauR1
+  if is_resample:
+    print('Resampling required')
+    model_new['lgTauR'] = tauR1[(np.min(tauR2)<=tauR1)&(tauR1<=np.max(tauR2))]
+    model2 = resample_model(model2,model_new['lgTauR'])
+  model_new['ndepth'] = len(model_new['lgTauR'])
+
+  def get_weight(key):
+    if key in alpha.keys():
+      a = alpha[key]
+    else:
+      a = 0.0
+    return w2**(1.0-a) 
+
+  model_new['filename'] = ''
+  model_new['modelname'] = 'interp_'+model1['modelname']+'_'+model2['modelname']
+  model_new['last_iteration'] = 'interp'
+  for key in model1.keys():
+    ww = get_weight(key)
+    if key in ['filename','modeltype','modelname','last_iteration','ndepth','lgTauR','geometry']:
+      continue
+    elif key == 'logg':
+      model_new['logg'] = (1.-ww)*model1['logg'] + ww*model2['logg']
+      model_new['gravity'] = 10.**model_new['logg']
+    elif key == 'abundance':
+      model_new['abundance'] = {}
+      for key2 in model1[key].keys():
+        model_new[key][key2] = (1.-ww)*model1[key][key2]+ww*model2[key][key2]
+    else:
+      if key in interp_in_log:
+        model_new[key] = 10.**( (1.-ww)*np.log10(model1[key]) + \
+                                ww*np.log10(model2[key]) )
+      else:
+        model_new[key] = (1.-ww)*model1[key] + ww*model2[key]
+  return model_new
+
+        
+
+
+def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_interp=False):
   '''
   Get marcs file name
   * logg<3.5 then spherical
@@ -51,21 +136,96 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False):
     mh1, mh2 = utils.get_grid_value(grid_value['mh'],mh,outside=outside)
   except ValueError:
     ValueError('mh out of range')
-  grid_small = grid[(grid['teff']==teff1)|(grid['teff']==teff2)|\
-    (grid['logg']==logg1)|(grid['logg']==logg2)|\
-    (grid['mh']==mh1)|(grid['mh']==mh2)]
+  grid_small = grid[((grid['teff']==teff1)|(grid['teff']==teff2))&\
+    ((grid['logg']==logg1)|(grid['logg']==logg2))&\
+    ((grid['mh']==mh1)|(grid['mh']==mh2))]
   
+  params = {'111':[teff1,logg1,mh1],
+            '112':[teff1,logg1,mh2],
+            '121':[teff1,logg2,mh1],
+            '122':[teff1,logg2,mh2],
+            '211':[teff2,logg1,mh1],
+            '212':[teff2,logg1,mh2],
+            '221':[teff2,logg2,mh1],
+            '222':[teff2,logg2,mh2],}
+  models = {}
   if not alphafe is None:
     alphafe_grid1 = grid_small[grid_small['mh']==mh1]['alphafe'].values
     try:
       alpha1z1, alpha2z1 = utils.get_grid_value(alphafe_grid1,alphafe,outside=outside)
+      aw2z1 = (alphafe-alpha1z1)/(alpha2z1-alpha1z1)
     except ValueError:
-      raise ValueError('Alpha_fe out of range',outside=outside)
+      raise ValueError('Alpha_fe out of range')
     alphafe_grid2 = grid_small[grid_small['mh']==mh2]['alphafe'].values
     try:
-      alpha1z2, alpha2z2 = utils.get_grid_value(alphafe_grid2,alphafe)
+      alpha1z2, alpha2z2 = utils.get_grid_value(alphafe_grid2,alphafe,outside=outside)
+      aw2z2 = (alphafe-alpha1z2)/(alpha2z2-alpha1z2)
     except ValueError:
-      raise ValueError('Alpha_fe out of range',outside=outside)
+      raise ValueError('Alpha_fe out of range')
+
+    # First interpolate in [alpha/fe]
+    for grid_key in ['111','121','211','221']:
+      modela1 = read_marcs(get_filename1(geometry,*params[grid_key],alpha1z1))
+      modela2 = read_marcs(get_filename1(geometry,*params[grid_key],alpha2z1))
+      if alpha1z1 == alpha2z1:
+        models[grid_key] = modela1.copy()
+      else:
+        models[grid_key] = interp_model2(modela1,modela2,aw2z1)
+    for grid_key in ['112','122','212','222']:
+      modela1 = read_marcs(get_filename1(geometry,*params[grid_key],alpha1z2))
+      modela2 = read_marcs(get_filename1(geometry,*params[grid_key],alpha2z2))
+      if alpha1z2 == alpha2z2:
+        models[grid_key] = modela1.copy()
+      else:
+        models[grid_key] = interp_model2(modela1,modela2,aw2z2)
+  else:
+    for grid_key in params.keys():
+      models[grid_key] = read_marcs(get_filename1(geometry,*params[grid_key]))
+  
+  ## Interpolation in mh
+  alpha_values = {'T':1.-(teff/4000.)**2.0,\
+    'Pe':1-(teff/3500)**2.5,
+    'Pg':1-(teff/4100)**4.,
+    'KappaRoss':1.0-(teff/3700.)**3.5}
+  if mh1==mh2:
+    for grid_key in ['11','12','21','22']:
+      models[f'{grid_key}0'] = models[f'{grid_key}1'].copy()   
+  else:
+    mw2 = (mh-mh1)/(mh2-mh1)
+    for grid_key in ['11','12','21','22']:
+      models[f'{grid_key}0'] = \
+        interp_model2(models[f'{grid_key}1'],models[f'{grid_key}2'],mw2,alpha=alpha_values)
+  
+  # Interpolation in logg
+  alpha_values = {'T':0.3,\
+    'Pe':0.05,
+    'Pg':0.06,
+    'KappaRoss':-0.12}
+  if logg1==logg2:
+    for grid_key in ['1','2']:
+      models[f'{grid_key}00'] = models[f'{grid_key}10'].copy()   
+  else:
+    gw2 = (logg-logg1)/(logg2-logg1)
+    for grid_key in ['1','2']:
+      models[f'{grid_key}00'] = \
+        interp_model2(models[f'{grid_key}10'],models[f'{grid_key}20'],gw2,alpha=alpha_values)
+  
+  # Interpolation in teff
+  alpha_values = {'T':0.15,\
+    'Pe':0.3,
+    'Pg':-0.4,
+    'KappaRoss':-0.15}
+  if teff1==teff2:
+    models[f'000'] = models[f'100'].copy()   
+  else:
+    tw2 = (teff-teff1)/(teff2-teff1)
+    models[f'000'] = \
+        interp_model2(models[f'100'],models[f'200'],tw2,alpha=alpha_values)
+  if check_interp:
+    return models
+  else:
+    return models['000']
+
 
 
 
@@ -78,7 +238,7 @@ def write_marcs(filename, marcs_model):
     # line 1
     f.write(marcs_model['modelname']+'\n')
     # line 2
-    f.write('{0:7.1f}      Teff [K].         Last iteration; yyyymmdd={1:s}\n'.format(\
+    f.write('{0:7.0f}      Teff [K].         Last iteration; yyyymmdd={1:s}\n'.format(\
       marcs_model['teff'],marcs_model['last_iteration']))
     # line 3
     f.write('{0:12.4E} Flux [erg/cm2/s]\n'.format(marcs_model['Flux']))
@@ -93,12 +253,15 @@ def write_marcs(filename, marcs_model):
     # line 8
     f.write('{0:12.4E} 1 cm radius for plane-parallel models\n'.format(marcs_model['radius']))
     # line 9
-    f.write('{0:12.4E} Luminosity [Lsun]\n'.format(marcs_model['luminosity']))
+    if marcs_model['radius']==1.0:
+      f.write('{0:12.4E} Luminosity [Lsun]\n'.format(marcs_model['luminosity']))
+    else:
+      f.write('{0:12.5f} Luminosity [Lsun]\n'.format(marcs_model['luminosity']))
     # line 10
-    f.write('{0:6.2f}{1:5.2f}{2:6.3f}{3:5.2f} are the convection parameters: alpha, nu y and beta\n'.format(\
+    f.write('{0:6.2f}{1:5.2f}{2:6.3f}{3:5.2f} are the convection parameters: alpha, nu, y and beta\n'.format(\
       marcs_model['conv_alpha'],marcs_model['conv_nu'],marcs_model['conv_y'],marcs_model['conv_beta']))
     # line 11
-    f.write('{0:9.5f}{1:8.5f}{2:9.2E} are X, Y and Z, 12C/13C={3:2d} \n'.format(\
+    f.write('{0:9.5f}{1:8.5f}{2:9.2E} are X, Y and Z, 12C/13C={3:2.0f} \n'.format(\
       marcs_model['X'],marcs_model['Y'],marcs_model['Z'],marcs_model['12C13C']))
 
     # line 12, skip
@@ -118,7 +281,7 @@ def write_marcs(filename, marcs_model):
     # Model structure
     f.write(' k lgTauR  lgTau5    Depth     T        Pe          Pg         Prad       Pturb\n')
     for ii in range(marcs_model['ndepth']):
-      f.write('{0:3d} {1:5.2f} {2:7.4f} {3:10.3E} {4:7.1f}  {5:11.4E}  {6:11.4E}  {7:11.4E}  {8:11.4E}\n'.format(\
+      f.write('{0:3d} {1:5.2f} {2:7.4f} {3:10.3E} {4:7.1f} {5:11.4E} {6:11.4E} {7:11.4E} {8:11.4E}\n'.format(\
         ii+1,
         marcs_model['lgTauR'][ii],
         marcs_model['lgTau5'][ii],
@@ -130,7 +293,7 @@ def write_marcs(filename, marcs_model):
         marcs_model['Pturb'][ii]))
     f.write(' k lgTauR    KappaRoss   Density   Mu      Vconv   Fconv/F      RHOX\n')
     for ii in range(marcs_model['ndepth']):
-      f.write('{0:3d} {1:5.2f}  {2:11.4E}  {3:11.4E} {4:5.3f} {5:10.3E} {6:7.5f} {7:13.6E}\n'.format(\
+      f.write('{0:3d} {1:5.2f} {2:11.4E} {3:11.4E} {4:5.3f} {5:10.3E} {6:7.5f} {7:13.6E}\n'.format(\
         ii+1,
         marcs_model['lgTauR'][ii],
         marcs_model['KappaRoss'][ii],
@@ -143,7 +306,7 @@ def write_marcs(filename, marcs_model):
     f.write(' k  lgPgas   H I    H-     H2     H2+    H2O    OH     CH     CO     CN     C2\n')
     for ii in range(marcs_model['ndepth']):
       f.write('{0:3d} {1:6.3f} {2:6.2f} {3:6.2f} {4:6.2f} {5:6.2f} {6:6.2f} {7:6.2f} {8:6.2f} {9:6.2f} {10:6.2f} {11:6.2f}\n'.format(\
-        ii,
+        ii+1,
         marcs_model['lgPgas'][ii],
         marcs_model['H_I'][ii],
         marcs_model['H-'][ii],
@@ -173,7 +336,7 @@ def write_marcs(filename, marcs_model):
     f.write(' k    C3     CS     SiC   SiC2    NS     SiN    SiO    SO     S2     SiS   Other\n')
     for ii in range(marcs_model['ndepth']):
       f.write('{0:3d} {1:6.2f} {2:6.2f} {3:6.2f} {4:6.2f} {5:6.2f} {6:6.2f} {7:6.2f} {8:6.2f} {9:6.2f} {10:6.2f} {11:6.2f}\n'.format(\
-        ii,
+        ii+1,
         marcs_model['C3'][ii],
         marcs_model['CS'][ii],
         marcs_model['SiC'][ii],

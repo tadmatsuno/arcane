@@ -289,3 +289,25 @@ def textsamples(samples,reverse=False):
     for ss in samples:
       outtxt += '{0:10.3f} {1:10.3f}\n'.format(ss[0],ss[1])
     return outtxt
+
+def get_grid_value(grid_points,target, outside='nearest'):
+  if np.min(grid_points)>target:
+    if outside == 'nearest':
+      return np.min(grid_points),np.min(grid_points)
+    else:
+      raise ValueError(\
+        f'The input value is too low. available:{np.min(grid_points)} target={target}')
+  if np.max(grid_points)<target:
+    if outside == 'nearest':
+      return np.max(grid_points),np.max(grid_points)
+    else:
+      raise ValueError(\
+        f'The input value is too high. available:{np.max(grid_points)} target={target}')
+  if (np.min(grid_points)==target)|(np.max(grid_points)==target):
+    return target,target
+  p1 = np.max(grid_points[grid_points<target])
+  p2 = np.min(grid_points[grid_points>=target])
+  if p2==target:
+    return p2,p2
+  else:
+    return p1,p2
