@@ -133,7 +133,8 @@ class ContinuumFit:
     spl : scipy.interpolate.splrep 
     '''
 
-    knots = np.linspace(xx[0],xx[-1],int((xx[-1]-xx[0])//dx_knots))
+    knots = np.linspace(xx[0],xx[-1],\
+       np.maximum(int((xx[-1]-xx[0])//dx_knots),3))
     knots_in = knots[1:-1]
     ## Remove knots with no points aound them
     npt_btw_knots = self._get_npt_btw_knots(xx,knots)
@@ -162,6 +163,8 @@ class ContinuumFit:
       knots2 = np.array(knots2)
     else:
       knots2 = np.hstack([knots[0],knots_in,knots[-1]])
+    if len(knots2)<=2:
+      knots2 = np.array([0.5*(knots[0]+knots[-1])])
     spl = splrep(xx,yy,task=-1,t=knots2[1:-1])
     return spl
 
