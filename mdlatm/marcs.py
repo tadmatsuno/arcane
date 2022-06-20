@@ -53,6 +53,9 @@ def interp_model2(model1,model2,w2,alpha={},\
   assert model1['modeltype']==model2['modeltype'],\
     'Interpolation error, modeltype mismatch'
   model_new = {}
+  model_new['comment'] = ''
+  model_new['comment'] += model1['comment']
+  model_new['comment'] += model2['comment']
   model_new['modeltype'] = model1['modeltype']
   model_new['geometry'] = model1['geometry']
 
@@ -82,7 +85,7 @@ def interp_model2(model1,model2,w2,alpha={},\
   model_new['last_iteration'] = 'interp'
   for key in model1.keys():
     ww = get_weight(key)
-    if key in ['filename','modeltype','modelname','last_iteration','ndepth','lgTauR','geometry']:
+    if key in ['filename','modeltype','modelname','last_iteration','ndepth','lgTauR','geometry','comment']:
       continue
     elif key == 'logg':
       model_new['logg'] = (1.-ww)*model1['logg'] + ww*model2['logg']
@@ -125,15 +128,15 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
     outside = 'error'
 
   try:
-    teff1, teff2 = utils.get_grid_value(grid_value['teff'],teff,outside=outside)
+    teff1, teff2, t_success = utils.get_grid_value(grid_value['teff'],teff,outside=outside)
   except ValueError:
     ValueError('teff out of range')
   try:
-    logg1, logg2 = utils.get_grid_value(grid_value['logg'],logg,outside=outside)
+    logg1, logg2, g_success = utils.get_grid_value(grid_value['logg'],logg,outside=outside)
   except ValueError:
     ValueError('logg out of range')
   try:
-    mh1, mh2 = utils.get_grid_value(grid_value['mh'],mh,outside=outside)
+    mh1, mh2, m_success = utils.get_grid_value(grid_value['mh'],mh,outside=outside)
   except ValueError:
     ValueError('mh out of range')
   grid_small = grid[((grid['teff']==teff1)|(grid['teff']==teff2))&\
@@ -152,14 +155,12 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
   if not alphafe is None:
     alphafe_grid1 = grid_small[grid_small['mh']==mh1]['alphafe'].values
     try:
-      alpha1z1, alpha2z1 = utils.get_grid_value(alphafe_grid1,alphafe,outside=outside)
-      aw2z1 = (alphafe-alpha1z1)/(alpha2z1-alpha1z1)
+      alpha1z1, alpha2z1, a_success1 = utils.get_grid_value(alphafe_grid1,alphafe,outside=outside)
     except ValueError:
       raise ValueError('Alpha_fe out of range')
     alphafe_grid2 = grid_small[grid_small['mh']==mh2]['alphafe'].values
     try:
-      alpha1z2, alpha2z2 = utils.get_grid_value(alphafe_grid2,alphafe,outside=outside)
-      aw2z2 = (alphafe-alpha1z2)/(alpha2z2-alpha1z2)
+      alpha1z2, alpha2z2, a_success2 = utils.get_grid_value(alphafe_grid2,alphafe,outside=outside)
     except ValueError:
       raise ValueError('Alpha_fe out of range')
 
@@ -170,14 +171,20 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
       if alpha1z1 == alpha2z1:
         models[grid_key] = modela1.copy()
       else:
+        aw2z1 = (alphafe-alpha1z1)/(alpha2z1-alpha1z1)
         models[grid_key] = interp_model2(modela1,modela2,aw2z1)
+      if not a_success1:
+        models[grid_key]['comment'] += 'interp_error_A '
     for grid_key in ['112','122','212','222']:
       modela1 = read_marcs(get_filename1(geometry,*params[grid_key],alpha1z2))
       modela2 = read_marcs(get_filename1(geometry,*params[grid_key],alpha2z2))
       if alpha1z2 == alpha2z2:
         models[grid_key] = modela1.copy()
       else:
+        aw2z2 = (alphafe-alpha1z2)/(alpha2z2-alpha1z2)
         models[grid_key] = interp_model2(modela1,modela2,aw2z2)
+      if not a_success2:
+        models[grid_key]['comment'] += 'interp_error_A '
   else:
     for grid_key in params.keys():
       models[grid_key] = read_marcs(get_filename1(geometry,*params[grid_key]))
@@ -195,7 +202,9 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
     for grid_key in ['11','12','21','22']:
       models[f'{grid_key}0'] = \
         interp_model2(models[f'{grid_key}1'],models[f'{grid_key}2'],mw2,alpha=alpha_values)
-  
+  if not m_success:
+    for grid_key in ['11','12','21','22']:
+      models[f'{grid_key}0']['comment'] += 'interp_error_M '
   # Interpolation in logg
   alpha_values = {'T':0.3,\
     'Pe':0.05,
@@ -209,7 +218,9 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
     for grid_key in ['1','2']:
       models[f'{grid_key}00'] = \
         interp_model2(models[f'{grid_key}10'],models[f'{grid_key}20'],gw2,alpha=alpha_values)
-  
+  if not g_success:
+    for grid_key in ['1','2']:
+      models[f'{grid_key}00']['comment'] += 'interp_error_g '
   # Interpolation in teff
   alpha_values = {'T':0.15,\
     'Pe':0.3,
@@ -221,6 +232,8 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
     tw2 = (teff-teff1)/(teff2-teff1)
     models[f'000'] = \
         interp_model2(models[f'100'],models[f'200'],tw2,alpha=alpha_values)
+  if not t_success:
+    models['000']['comment'] += 'interp_error_t '
   if check_interp:
     return models
   else:
@@ -361,6 +374,7 @@ def read_marcs(filename):
   marcs_model = {}
   marcs_model['filename'] = filename
   marcs_model['modeltype'] = 'marcs'
+  marcs_model['comment'] = ''
   with open(filename) as f:
     # line 1
     line = f.readline().rstrip()

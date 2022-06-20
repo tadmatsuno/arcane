@@ -293,21 +293,21 @@ def textsamples(samples,reverse=False):
 def get_grid_value(grid_points,target, outside='nearest'):
   if np.min(grid_points)>target:
     if outside == 'nearest':
-      return np.min(grid_points),np.min(grid_points)
+      return np.min(grid_points),np.min(grid_points),False
     else:
       raise ValueError(\
         f'The input value is too low. available:{np.min(grid_points)} target={target}')
   if np.max(grid_points)<target:
     if outside == 'nearest':
-      return np.max(grid_points),np.max(grid_points)
+      return np.max(grid_points),np.max(grid_points),False
     else:
       raise ValueError(\
         f'The input value is too high. available:{np.max(grid_points)} target={target}')
   if (np.min(grid_points)==target)|(np.max(grid_points)==target):
-    return target,target
+    return target,target,True
   p1 = np.max(grid_points[grid_points<target])
   p2 = np.min(grid_points[grid_points>=target])
   if p2==target:
-    return p2,p2
+    return p2,p2,True
   else:
-    return p1,p2
+    return p1,p2,True
