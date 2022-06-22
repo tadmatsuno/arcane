@@ -23,7 +23,7 @@ def get_filename1(geometry,teff,logg,mh,alpha=None):
   if alpha is None:
     g1 = grid[(grid['geometry']==geometry)&(grid['teff']==teff)&(grid['logg']==logg)&\
       (grid['mh']==mh)&(grid['comp']=='st')]
-  elif type(alpha) is str:
+  elif isinstance(alpha, str):
     g1 = grid[(grid['geometry']==geometry)&(grid['teff']==teff)&(grid['logg']==logg)&\
       (grid['mh']==mh)&(grid['comp']==alpha)]
   else:
@@ -117,8 +117,10 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
   
   Parameters
   ----------
-  alphafe : float
-    if not None, the model will also be interpolated in alpha direction. 
+  alphafe : float or string
+    if string, it should be one of 'st','ae','an','ap'
+    if None, comp is assumed to be 'st'
+    else, the model will also be interpolated in alpha direction. 
     Otherwise, standard composition
   '''
   if logg <= 3.5:
@@ -155,7 +157,13 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
             '221':[teff2,logg2,mh1],
             '222':[teff2,logg2,mh2],}
   models = {}
-  if not alphafe is None:
+  if alphafe is None:
+    for grid_key in params.keys():
+      models[grid_key] = read_marcs(get_filename1(geometry,*params[grid_key]))
+  elif isinstance(alphafe,str):
+    for grid_key in params.keys():
+      models[grid_key] = read_marcs(get_filename1(geometry,*params[grid_key],alpha=alphafe))
+  else:
     alphafe_grid1 = grid_small[grid_small['mh']==mh1]['alphafe'].values
     try:
       alpha1z1, alpha2z1, a_success1 = utils.get_grid_value(alphafe_grid1,alphafe,outside=outside)
@@ -193,9 +201,6 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
       for grid_key in params.keys():
         models[grid_key] = read_marcs(get_filename1(geometry,*params[grid_key]))
         models[grid_key]['comment'] += 'interp_error_A '
-  else:
-    for grid_key in params.keys():
-      models[grid_key] = read_marcs(get_filename1(geometry,*params[grid_key]))
   
   ## Interpolation in mh
   alpha_values = {'T':1.-(teff/4000.)**2.0,\
