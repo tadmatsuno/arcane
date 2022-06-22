@@ -9,9 +9,9 @@ with open(data_dir+'MARCS_avai.dat') as fout:
   for line in fout.readlines():
     key = line[0:10].strip()
     if key == 'teff':
-      val = np.array([int(val) for val in line[11:].split()])
+      val = np.array([int(val) for val in line[10:].split()])
     else:
-      val = np.array([float(val) for val in line[11:].split()])
+      val = np.array([float(val) for val in line[10:].split()])
     grid_value[key] = val
 
   
@@ -20,13 +20,15 @@ grid = pandas.read_csv(data_dir+'MARCS_grid.csv',index_col=None)
 
 def get_filename1(geometry,teff,logg,mh,alpha=None):
   assert geometry in ['p','s'], 'Geometry has to be either p or s.'
-  if not alpha is None:
-    g1 = grid[(grid['geometry']==geometry)&(grid['teff']==teff)&(grid['logg']==logg)&\
-      (grid['mh']==mh)&(grid['alphafe']==alpha)]
-
-  else:
+  if alpha is None:
     g1 = grid[(grid['geometry']==geometry)&(grid['teff']==teff)&(grid['logg']==logg)&\
       (grid['mh']==mh)&(grid['comp']=='st')]
+  elif type(alpha) is str:
+    g1 = grid[(grid['geometry']==geometry)&(grid['teff']==teff)&(grid['logg']==logg)&\
+      (grid['mh']==mh)&(grid['comp']==alpha)]
+  else:
+    g1 = grid[(grid['geometry']==geometry)&(grid['teff']==teff)&(grid['logg']==logg)&\
+      (grid['mh']==mh)&(grid['alphafe']==alpha)]
   assert len(g1)==1,f'Cannot identify unique model {teff} {logg} {mh} {alpha}'
   return data_dir+g1.iloc[0]['filename']
 
@@ -47,6 +49,7 @@ def interp_model2(model1,model2,w2,alpha={},\
   interp_in_log=['Pe','Pg','Prad','Pturb','KappaRoss','Density','RHOX']):
   '''
     model1 needs to be ''the inferior'' model 
+    alpha is not alpha abundance!! 
   ''' 
   assert model1['geometry']==model2['geometry'],\
     'Interpolation error, model geometry mismatch'
@@ -165,25 +168,30 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
       raise ValueError('Alpha_fe out of range')
 
     # First interpolate in [alpha/fe]
-    for grid_key in ['111','121','211','221']:
-      modela1 = read_marcs(get_filename1(geometry,*params[grid_key],alpha1z1))
-      modela2 = read_marcs(get_filename1(geometry,*params[grid_key],alpha2z1))
-      if alpha1z1 == alpha2z1:
-        models[grid_key] = modela1.copy()
-      else:
-        aw2z1 = (alphafe-alpha1z1)/(alpha2z1-alpha1z1)
-        models[grid_key] = interp_model2(modela1,modela2,aw2z1)
-      if not a_success1:
-        models[grid_key]['comment'] += 'interp_error_A '
-    for grid_key in ['112','122','212','222']:
-      modela1 = read_marcs(get_filename1(geometry,*params[grid_key],alpha1z2))
-      modela2 = read_marcs(get_filename1(geometry,*params[grid_key],alpha2z2))
-      if alpha1z2 == alpha2z2:
-        models[grid_key] = modela1.copy()
-      else:
-        aw2z2 = (alphafe-alpha1z2)/(alpha2z2-alpha1z2)
-        models[grid_key] = interp_model2(modela1,modela2,aw2z2)
-      if not a_success2:
+    try:
+      for grid_key in ['111','121','211','221']:
+        modela1 = read_marcs(get_filename1(geometry,*params[grid_key],alpha1z1))
+        modela2 = read_marcs(get_filename1(geometry,*params[grid_key],alpha2z1))
+        if alpha1z1 == alpha2z1:
+          models[grid_key] = modela1.copy()
+        else:
+          aw2z1 = (alphafe-alpha1z1)/(alpha2z1-alpha1z1)
+          models[grid_key] = interp_model2(modela1,modela2,aw2z1)
+        if not a_success1:
+          models[grid_key]['comment'] += 'interp_error_A '
+      for grid_key in ['112','122','212','222']:
+        modela1 = read_marcs(get_filename1(geometry,*params[grid_key],alpha1z2))
+        modela2 = read_marcs(get_filename1(geometry,*params[grid_key],alpha2z2))
+        if alpha1z2 == alpha2z2:
+          models[grid_key] = modela1.copy()
+        else:
+          aw2z2 = (alphafe-alpha1z2)/(alpha2z2-alpha1z2)
+          models[grid_key] = interp_model2(modela1,modela2,aw2z2)
+        if not a_success2:
+          models[grid_key]['comment'] += 'interp_error_A '
+    except:
+      for grid_key in params.keys():
+        models[grid_key] = read_marcs(get_filename1(geometry,*params[grid_key]))
         models[grid_key]['comment'] += 'interp_error_A '
   else:
     for grid_key in params.keys():
