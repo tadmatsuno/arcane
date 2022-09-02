@@ -365,7 +365,7 @@ class MainWindow(QWidget,Ui_Dialog):
       self.output_multi_head  = output_multi_head
   
   def input_long1d(self,long1d_wavelength,long1d_flux,\
-      wvl_block=100.,wvl_overlap=20.,output=None):
+      wvl_block=200.,wvl_overlap=40.,output=None):
     '''
     Set input data for long-1d spectrum. 
     Spectrum is split into small chunks, each of which has a range of wvl_block. 
