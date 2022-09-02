@@ -1,7 +1,9 @@
 import numpy as np
 from scipy.interpolate import splrep, splint
 from scipy.special import voigt_profile
-
+from astropy.constants import c
+from scipy.ndimage.filters import gaussian_filter
+ckm = c.cgs.value*1.0e-5
 
 def get_dx(x):
   '''
@@ -311,3 +313,12 @@ def get_grid_value(grid_points,target, outside='nearest'):
     return p2,p2,True
   else:
     return p1,p2,True
+
+def smooth_spectrum(wvl,flx,vfwhm):
+  wvlmin,wvlmax = min(wvl),max(wvl)
+  wc = (wvlmin+wvlmax)/2.0
+  dvel = (wvlmax-wvlmin)/(len(wvl)-1.0)/wc*ckm
+  vsigma = vfwhm/ (np.sqrt(8.0*np.log(2)))
+  psigma = vsigma/dvel
+  flout = gaussian_filter(flx,psigma,mode='constant',cval=1.0,truncate=10.0)
+  return flout
