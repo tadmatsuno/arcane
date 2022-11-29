@@ -3,7 +3,7 @@ import pandas
 from arcane.utils import utils
 from scipy.interpolate import CubicSpline
 
-data_dir = '/mnt/d/model_atm/MARCS/'
+data_dir = '/mnt/d/model_atm/MARCS/' ## CHANGE THIS 
 with open(data_dir+'MARCS_avai.dat') as fout:
   grid_value = {}
   for line in fout.readlines():
