@@ -2,6 +2,7 @@ import numpy as np
 from scipy.interpolate import splrep, splint
 from scipy.special import voigt_profile
 from astropy.constants import c
+from scipy.spatial import KDTree
 from scipy.ndimage.filters import gaussian_filter
 ckm = c.cgs.value*1.0e-5
 
@@ -174,9 +175,12 @@ def sigmaclip(xx,yy,use_flag,yfit,grow,low_rej,high_rej,
     ystd = np.nanstd(resid[use_flag],ddof=1)
 
   outside = (resid < (-ystd*low_rej)) | (resid > (ystd*high_rej))
-  xoutside = xx[outside]
-  xoutside = xoutside.repeat(len(xx)).reshape(len(xoutside),len(xx))
-  removemask = np.any(((xoutside-grow)<xx)&(xx<(xoutside+grow)),axis=0)
+#  xoutside = xx[outside]
+#  xoutside = xoutside.repeat(len(xx)).reshape(len(xoutside),len(xx))
+#  removemask = np.any(((xoutside-grow)<xx)&(xx<(xoutside+grow)),axis=0)
+  kd_outside = KDTree(np.atleast_2d(xx[outside]).T)
+  r_outside, idx_outside = kd_outside.query(np.atleast_2d(xx).T, workers=-1)
+  removemask = r_outside <= grow
   removemask[np.min(np.nonzero(use_flag))] = False
   removemask[np.max(np.nonzero(use_flag))] = False
   return removemask
