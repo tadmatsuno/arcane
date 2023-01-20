@@ -6,6 +6,11 @@ from scipy.spatial import KDTree
 from scipy.ndimage.filters import gaussian_filter
 ckm = c.cgs.value*1.0e-5
 
+c1 = 0.5346
+c2 = (1.0-c1)**2.
+g1 = 2.0*np.sqrt(2.0*np.log(2.0))
+
+
 def get_dx(x):
   '''
   This function computes the bin size from an array of x-values.
@@ -185,7 +190,24 @@ def sigmaclip(xx,yy,use_flag,yfit,grow,low_rej,high_rej,
   removemask[np.max(np.nonzero(use_flag))] = False
   return removemask
 
-def get_glFWHM(fwhm,flfwhm):
+def wxg2wgwl(fwhm,fgfwhm):
+  '''
+  get fwhms of Gaussian and Lorenzian components from FWHM and gFWHM/FWHM
+
+  Parameters
+  ----------
+  fwhm : float
+  
+  fgfwhm :float
+    FWHM_G/FWHM
+
+  '''
+  flfwhm = (c1-np.sqrt(c1**2. - (2.*c1-1.)*(1.0-fgfwhm**2.)) )/ (2.*c1-1.)
+  lfwhm = fwhm*np.maximum(np.minimum(flfwhm,1.0),0.0)
+  gfwhm = fwhm*fgfwhm
+  return gfwhm,lfwhm 
+
+def wxl2wgwl(fwhm,flfwhm):
   '''
   get fwhms of Gaussian and Lorenzian components from FWHM and flFWHM
 
@@ -198,12 +220,149 @@ def get_glFWHM(fwhm,flfwhm):
 
   '''
   lfwhm = fwhm*flfwhm
-  gfwhm = np.sqrt(\
-    np.maximum(1.0e-10,(fwhm - 0.5346*lfwhm)**2.0-0.2166*lfwhm**2.0)\
-  )
+  fgfwhm = np.sqrt( (2.*c1-1.)*flfwhm**2.0 - 2.*c1*flfwhm + 1)
+  gfwhm = fwhm*np.maximum(np.minimum(fgfwhm,1.0),0.0)
   return gfwhm,lfwhm
 
-def voigts_multi(x0s,depths,sigmas,gammas):
+def gs2wg(sigma):
+  '''
+  Get fwhm of a gaussian profile
+  '''
+  return g1*sigma
+
+def wg2gs(fwhm):
+  '''
+  Get sigma of a gaussian profile from fwhm
+  '''
+  return fwhm/g1
+
+def lg2wl(gamma):
+  '''
+  Get fwhm of a Lorenzian profile
+  '''
+  return 2.*gamma
+
+def wl2lg(fwhm):
+  '''
+  Get gamma of a Lorenzian profile from fwhm
+  '''
+  return fwhm/2.
+
+def gslg2wxgxl(sigma,gamma):
+  '''
+  get fwhm of a Voigt profile
+
+  Returns
+  ----------
+  fwhm : float
+
+  fgfwhm :float
+    FWHM_G/FWHM
+
+  flfwhm :float
+    FWHM_L/FWHM = 2*gamma/FWHM
+
+  '''
+  lfwhm = lg2wl(gamma)
+  gfwhm = gs2wg(sigma)
+  return wgwl2wxgxl(gfwhm,lfwhm)
+
+def wgwl2wxgxl(gfwhm,lfwhm):
+  '''
+  get fwhm of a Voigt profile
+
+   Returns
+  ----------
+  fwhm : float
+
+  fgfwhm :float
+    FWHM_G/FWHM
+
+  flfwhm :float
+    FWHM_L/FWHM = 2*gamma/FWHM
+
+  '''
+  fwhm = c1*lfwhm + np.sqrt(c2*lfwhm**2. + gfwhm**2.)
+  flfwhm = lfwhm/fwhm
+  fgfwhm = gfwhm/fwhm
+  return fwhm,fgfwhm,flfwhm
+
+def wxl2gslg(fwhm,flfwhm):
+  '''
+  get sigma of Gaussian and gamma of Lorenzian components from FWHM and flFWHM
+
+  Parameters
+  ----------
+  fwhm : float
+  
+  flfwhm :float
+    FWHM_L/FWHM = 2*gamma/FWHM
+
+  '''
+  gfwhm,lfwhm = wxl2wgwl(fwhm,flfwhm)
+  sigma = wg2gs(gfwhm)
+  gamma = wl2lg(lfwhm)
+  return sigma,gamma
+
+def wxg2gslg(fwhm,fgfwhm):
+  '''
+  get sigma of Gaussian and gamma of Lorenzian components from FWHM and fgFWHM
+
+  Parameters
+  ----------
+  fwhm : float
+  
+  fgfwhm :float
+    FWHM_G/FWHM
+
+  '''
+  gfwhm,lfwhm = wxg2wgwl(fwhm,fgfwhm)
+  sigma = wg2gs(gfwhm)
+  gamma = wl2lg(lfwhm)
+  return sigma,gamma
+
+def voigt_EW_sigma_gamma(depth,sigma,gamma):
+  '''
+  Returns the EW of a Voigt profile
+  '''
+  return depth/voigt_profile(0,sigma,gamma)
+
+def voigt_EW_fwhm_flfwhm(depth,fwhm,flfwhm):
+  '''
+  Returns the EW of a Voigt profile
+  '''
+  sigma,gamma = wxl2gslg(fwhm,flfwhm)
+  return voigt_EW_sigma_gamma(depth,sigma,gamma)
+
+def voigt_EW_fwhm_fgfwhm(depth,fwhm,fgfwhm):
+  '''
+  Returns the EW of a Voigt profile
+  '''
+  sigma,gamma = wxg2gslg(fwhm,fgfwhm)
+  return voigt_EW_sigma_gamma(depth,sigma,gamma)
+
+def voigt_depth_sigma_gamma(ew,sigma,gamma):
+  '''
+  Returns the depth of a Voigt profile
+  '''
+  return ew*voigt_profile(0,sigma,gamma)
+
+def voigt_depth_fwhm_flfwhm(ew,fwhm,flfwhm):
+  '''
+  Returns the depth of a Voigt profile
+  '''
+  sigma,gamma = wxl2gslg(fwhm,flfwhm)
+  return voigt_depth_sigma_gamma(ew,sigma,gamma)
+
+def voigt_depth_fwhm_fgfwhm(ew,fwhm,fgfwhm):
+  '''
+  Returns the depth of a Voigt profile
+  '''
+  sigma,gamma = wxg2gslg(fwhm,fgfwhm)
+  return voigt_depth_sigma_gamma(ew,sigma,gamma)
+
+
+def voigts_multi_sigma_gamma(x0s,depths,sigmas,gammas):
   '''
   Returns sum of multiple Voigt profiles.
 
@@ -228,13 +387,13 @@ def voigts_multi(x0s,depths,sigmas,gammas):
   '''
   x0s = np.atleast_1d(x0s)
   depths = np.atleast_1d(depths)
-  sigmas = np.atleast_1d(sigmas)
-  gammas = np.atleast_1d(gammas)
+  sigmas = np.abs(np.atleast_1d(sigmas))
+  gammas = np.abs(np.atleast_1d(gammas))
   return lambda x:\
     np.sum([dep*voigt_profile(x-x0,ss,ll)/voigt_profile(0,ss,ll) \
       for x0,dep,ss,ll in zip(x0s,depths,sigmas,gammas)],axis=0)
 
-def voigts_multi2(x0s,depths,fwhms,flfwhm):
+def voigts_multi_fwhm_flfwhm(x0s,depths,fwhms,flfwhm):
   '''
   Returns sum of multiple Voigt profiles.
 
@@ -257,10 +416,35 @@ def voigts_multi2(x0s,depths,fwhms,flfwhm):
   function that returns flux at given position
     
   '''    
-  gfwhm,lfwhm = get_glFWHM(fwhms,flfwhm)
-  gamma = lfwhm/2.0
-  sigma = gfwhm/2.3548200450309493
-  return voigts_multi(x0s,depths,sigma,gamma)
+  sigma,gamma = wxl2gslg(fwhms,flfwhm)
+  return voigts_multi_sigma_gamma(x0s,depths,sigma,gamma)
+
+def voigts_multi_fwhm_fgfwhm(x0s,depths,fwhms,fgfwhm):
+  '''
+  Returns sum of multiple Voigt profiles.
+
+  Parameters
+  ----------
+  x0s : float or 1d-array
+    the central wavelength of the lines 
+
+  depths : float or 1d-array
+    the depths of the lines 
+
+  fwhms : float or 1d-array
+    FWHM of the lines 
+
+  fgfwhm : float or 1d-array
+    FWHM_G/FWHM 
+
+  Returns
+  -------
+  function that returns flux at given position
+    
+  '''    
+  print(x0s,depths,fwhms,fgfwhm)
+  sigma,gamma = wxg2gslg(fwhms,fgfwhm)
+  return voigts_multi_sigma_gamma(x0s,depths,sigma,gamma)
 
 def textsamples(samples,reverse=False):
   ''' 
