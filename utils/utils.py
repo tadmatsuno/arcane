@@ -442,7 +442,6 @@ def voigts_multi_fwhm_fgfwhm(x0s,depths,fwhms,fgfwhm):
   function that returns flux at given position
     
   '''    
-  print(x0s,depths,fwhms,fgfwhm)
   sigma,gamma = wxg2gslg(fwhms,fgfwhm)
   return voigts_multi_sigma_gamma(x0s,depths,sigma,gamma)
 

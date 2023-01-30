@@ -2,6 +2,7 @@ from arcane_dev.utils import utils
 from arcane_dev.spectrum import model
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas
 
 eps = 1.0e-6
 def test_conversions(fwhm,fgfwhm):
@@ -138,6 +139,87 @@ def test_voigt_fit():
     fig.savefig('fit_voigt_profiles.pdf')
 
 
+def test_voigt_fit2():
+
+    def convert_to_pandas(profs):
+        out_dict = {}
+        for ii in range(profs[0].nlines):
+            for key in ['center','dwvl','depth','fwhm','fgfwhm']:
+                out_dict[f'{key}_{ii}'] = []
+        for p in profs:            
+            for key in ['center','dwvl','depth','fwhm','fgfwhm']:
+                for ii,val in enumerate(p.model_parameters[key]):
+                    out_dict[f'{key}_{ii}'].append(val)
+        return pandas.DataFrame(out_dict) 
+      
+
+    ## Test on pure gaussians
+    def test_pure_gaussian():
+        fvoigt = utils.voigts_multi_fwhm_fgfwhm(\
+            np.array([0.0]),np.array([0.3]),np.array([0.1]),np.array([1.0]))
+        xbin = np.linspace(-1.,1.,1000)
+        yy = fvoigt(xbin) + 0.01*np.random.randn(len(xbin))
+        fit_mask = (-0.15<xbin)&(xbin<0.15)
+        prof = model.LineProfile(0.0,initial_depth=0.5,initial_fwhm=0.1)
+        prof.fit_control['voigt'] = np.array([False])
+        prof.fit(xbin[fit_mask],yy[fit_mask])
+        return prof
+    result = convert_to_pandas([test_pure_gaussian() for ii in range(100)])
+    result.to_csv('pure_gaussian_fitMC.csv')
+
+    def test_pure_gaussian():
+        fvoigt = utils.voigts_multi_fwhm_fgfwhm(\
+            np.array([0.0]),np.array([0.3]),np.array([0.1]),np.array([1.0]))
+        xbin = np.linspace(-1.,1.,1000)
+        yy = fvoigt(xbin) + 0.01*np.random.randn(len(xbin))
+        fit_mask = (-0.15<xbin)&(xbin<0.15)
+        prof = model.LineProfile(0.0,initial_depth=0.5,initial_fwhm=0.1)
+        prof.fit_control['voigt'] = np.array([False])
+        prof.fit(xbin[fit_mask],yy[fit_mask])
+        return prof
+    result = convert_to_pandas([test_pure_gaussian() for ii in range(100)])
+    result.to_csv('pure_gaussian_fitMC.csv')
+
+
+    def test_pure_gaussian_v():
+        fvoigt = utils.voigts_multi_fwhm_fgfwhm(\
+            np.array([0.0]),np.array([0.3]),np.array([0.1]),np.array([1.0]))
+        xbin = np.linspace(-1.,1.,1000)
+        yy = fvoigt(xbin) + 0.01*np.random.randn(len(xbin))
+        fit_mask = (-0.15<xbin)&(xbin<0.15)
+        prof = model.LineProfile(0.0,initial_depth=0.5,initial_fwhm=0.1)
+        prof.fit_control['voigt'] = np.array([True])
+        prof.fit(xbin[fit_mask],yy[fit_mask])
+        return prof
+    result = convert_to_pandas([test_pure_gaussian_v() for ii in range(100)])
+    result.to_csv('pure_gaussian_vfitMC.csv')
+
+    def test_voigt():
+        fvoigt = utils.voigts_multi_fwhm_fgfwhm(\
+            np.array([0.0,0.2]),np.array([0.5,0.3]),np.array([0.1,0.15]),np.array([0.6,0.9]))
+        xbin = np.linspace(-1.,1.,1000)
+        yy = fvoigt(xbin) + 0.01*np.random.randn(len(xbin))
+        fit_mask = (-0.2<xbin)&(xbin<0.2+0.2)
+        prof = model.LineProfile([0.0,0.15],initial_depth=0.5,initial_fwhm=0.1)
+        prof.fit_control['voigt'] = np.array([False]*2)
+        prof.fit(xbin[fit_mask],yy[fit_mask])
+        return prof
+    result = convert_to_pandas([test_voigt() for ii in range(100)])
+    result.to_csv('voigt_fitMC.csv')
+
+    def test_voigt_v():
+        fvoigt = utils.voigts_multi_fwhm_fgfwhm(\
+            np.array([0.0,0.2]),np.array([0.5,0.3]),np.array([0.1,0.15]),np.array([0.6,0.9]))
+        xbin = np.linspace(-1.,1.,1000)
+        yy = fvoigt(xbin) + 0.01*np.random.randn(len(xbin))
+        fit_mask = (-0.2<xbin)&(xbin<0.2+0.2)
+        prof = model.LineProfile([0.0,0.15],initial_depth=0.5,initial_fwhm=0.1)
+        prof.fit_control['voigt'] = np.array([True]*2)
+        prof.fit(xbin[fit_mask],yy[fit_mask])
+        return prof
+    result = convert_to_pandas([test_voigt_v() for ii in range(1000)])
+    result.to_csv('voigt_vfitMC.csv')
+
 
 if __name__ == '__main__':
     test_conversions(1.0,0.8)
@@ -145,3 +227,4 @@ if __name__ == '__main__':
     test_conversions(1.0,1.0)
     test_voigt()
     test_voigt_fit()
+    test_voigt_fit2()

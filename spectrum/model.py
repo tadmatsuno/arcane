@@ -2,7 +2,7 @@ import numpy as np
 from ..utils import utils
 from scipy.interpolate import splev, splrep
 import warnings
-from scipy.optimize import minimize,LinearConstraint
+from scipy.optimize import minimize,LinearConstraint,Bounds
 
 
 class ModelBase:
@@ -274,41 +274,38 @@ class LineProfile(ModelBase):
     def update(self, xx, yy):
         if any(self.fit_control['voigt']):
             voigt_tmp = self.fit_control['voigt'].copy()
-            self.fit_control['voigt'] = np.array([False]*self.nline)
+            self.fit_control['voigt'] = np.array([False]*self.nlines)
             self.update(xx,yy)
             self.fit_control['voigt'] = voigt_tmp.copy()
 
         xi_map = [] # How to map the input of f_residual (xi) to model_parameters
         x0 = [] # initial guess 
         # The following matrix and two arrays will be used in LinearConstraint
-        linconst = []
-        linconst_low = []
-        linconst_high = []      
+        const_low = []
+        const_high = []      
         if self.fit_control['share_dwvl']: # Use the same dwvl value for lines with fix_dwvl = False 
             if not all(self.fit_control['fix_dwvl']):# if dwvl is fixed for all the lines, nothing will be done
                 xi_map_tmp = 'dwvl_'
-                for ii in range(self.nline):
+                for ii in range(self.nlines):
                     if not self.fit_control['fix_dwvl'][ii]:
                         xi_map_tmp += f'{ii},'
                 xi_map.append(xi_map_tmp[:-1])
                 x0.append(self.model_parameters['dwvl'][0])
-                linconst.append([1.0])
-                linconst_low.append( -self.fit_control['max_dwvl'])
-                linconst_high.append(self.fit_control['max_dwvl'])
+                const_low.append( -self.fit_control['max_dwvl'])
+                const_high.append(self.fit_control['max_dwvl'])
         else:
-            for ii in range(self.nline):
+            for ii in range(self.nlines):
                 if not self.fit_control['fix_dwvl'][ii]:
                     xi_map.append(f'dwvl_{ii}')
                     x0.append(self.model_parameters['dwvl'][ii])
-                    linconst.append([0.0]*(len(xi_map)-1) + [1.0])
-                    linconst_low.append( -self.fit_control['max_dwvl'])
-                    linconst_high.append(self.fit_control['max_dwvl'])
+                    const_low.append( -self.fit_control['max_dwvl'])
+                    const_high.append(self.fit_control['max_dwvl'])
         # FWHM
         if self.fit_control['share_fwhm']:
             if not all(self.fit_control['fix_fwhm']): # If fwhm is fixed for all the lines nothing will be done
-                for ii in range(self.nline):
+                for ii in range(self.nlines):
                     xi_map_tmp = 'fwhm_'
-                    for ii in range(self.nline):
+                    for ii in range(self.nlines):
                         if not self.fit_control['fix_fwhm'][ii]:
                             xi_map_tmp += f'{ii}'
                     xi_map.append(xi_map_tmp[:-1])
@@ -317,12 +314,10 @@ class LineProfile(ModelBase):
                             self.model_parameters['fgfwhm'][0])
                     else:
                         x0.append(self.model_parameters['fwhm'][0])
-                    x0.append(self.model_parameters['fwhm'][0])
-                    linconst.append([0.0]*(len(xi_map)-1)+[1.0])
-                    linconst_low.append(self.fit_control['min_fwhm'])
-                    linconst_high.append(self.fit_control['max_fwhm'])
+                    const_low.append(self.fit_control['min_fwhm'])
+                    const_high.append(self.fit_control['max_fwhm'])
         else:
-            for ii in range(self.nline):
+            for ii in range(self.nlines):
                 if not self.fit_control['fix_fwhm'][ii]:
                     xi_map.append(f'fwhm_{ii}')
                     if self.fit_control['constrain_gaussian']:
@@ -330,23 +325,22 @@ class LineProfile(ModelBase):
                             self.model_parameters['fgfwhm'][ii])
                     else:
                         x0.append(self.model_parameters['fwhm'][ii])
-                    linconst.append([0.0]*(len(xi_map)-1)+[1.0])
-                    linconst_low.append(self.fit_control['min_fwhm'])
-                    linconst_high.append(self.fit_control['max_fwhm'])
+                    const_low.append(self.fit_control['min_fwhm'])
+                    const_high.append(self.fit_control['max_fwhm'])
         # Voigt
-        for ii in range(self.nline):
+        for ii in range(self.nlines):
             if self.fit_control['voigt'][ii]:
                 xi_map.append(f'fgfwhm_{ii}')
                 x0.append(self.model_parameters['fgfwhm'][ii])
-                linconst.append([0.0]*(len(xi_map)-1)+[1.0])
-                linconst_low.append(0.0)
-                linconst_high.append(1.0)
+                const_low.append(0.0)
+                const_high.append(1.0)
         # depth
-        for ii in range(self.nline):
+        for ii in range(self.nlines):
             xi_map.append(f'depth_{ii}')
             x0.append(self.model_parameters['depth'][ii])
+            const_low.append(-np.inf)
+            const_high.append(np.inf)
 
-        linconst = [ l + [0.0]*(len(xi_map) - len(l)) for l in linconst]
         def f_residual(xi):
             for ii,map1 in enumerate(xi_map):
                 label, sindices = map1.split('_')
@@ -364,7 +358,7 @@ class LineProfile(ModelBase):
                         self.model_parameters['fwhm'][idx] = xi[ii]*self.model_parameters['fgfwhm'][ii]
             return np.sum((self.evaluate(xx) - yy)**2.)
         res = minimize(f_residual, x0=x0, \
-            constraints = LinearConstraint(linconst,linconst_low,linconst_high))
+            bounds= Bounds(const_low,const_high))
         residual = f_residual(res.x)
 
 
@@ -376,14 +370,14 @@ class LineProfile(ModelBase):
             self.model_parameters['fgfwhm'])(xx)
 
     def delete_line(self,idx):
-        self.nline -= 1
+        self.nlines -= 1
         self.model_parameters['center'] = np.delete(self.model_parameters['center'],idx)
         self.model_parameters['dwvl'] = np.delete(self.model_parameters['dwvl'],idx)
         self.model_parameters['fwhm'] = np.delete(self.model_parameters['fwhm'],idx)
         self.model_parameters['fgfwhm'] = np.delete(self.model_parameters['fgfwhm'],idx)
 
     def _add_line_base(self):
-        self.nline +=1 
+        self.nlines +=1 
         self.model_parameters['center'] = np.append(self.model_parameters['center'],0.0)
         self.model_parameters['dwvl'] = np.append(self.model_parameters['dwvl'],0.0)
         self.model_parameters['fwhm'] = np.append(self.model_parameters['fwhm'],self.initial_fwhm)
@@ -421,7 +415,7 @@ class LineProfile(ModelBase):
         return [utils.get_voigt_EW2(\
             self.model_parameters['depth'][ii], 
             self.model_parameters['fwhm'][ii], 
-            self.model_parameters['fgfwhm'][ii]) for ii in range(self.nline)]
+            self.model_parameters['fgfwhm'][ii]) for ii in range(self.nlines)]
 
     def __init__(self, central_wavelengths, 
         initial_depth = 0.3, initial_fwhm = 0.1,
@@ -476,13 +470,13 @@ class LineProfile(ModelBase):
             samples = samples, std_from_central = std_from_central)
         self.initial_depth = initial_depth
         self.initial_fwhm = initial_fwhm
-        self.nline = len(np.atleast_1d(central_wavelengths))
+        self.nlines = len(np.atleast_1d(central_wavelengths))
         self.model_parameters = \
             {'center' : np.atleast_1d(central_wavelengths),
-            'dwvl' : np.zeros(self.nline),
-            'depth' : np.zeros(self.nline) + initial_depth,
-            'fwhm' : np.zeros(self.nline) + initial_fwhm,
-            'fgfwhm' : np.zeros(self.nline)+1.0}
+            'dwvl' : np.zeros(self.nlines),
+            'depth' : np.zeros(self.nlines) + initial_depth,
+            'fwhm' : np.zeros(self.nlines) + initial_fwhm,
+            'fgfwhm' : np.zeros(self.nlines)+1.0}
         self.fit_control = {}
         for key in self.default_fit_control.keys():
             value_in = self.default_fit_control[key]
@@ -490,9 +484,9 @@ class LineProfile(ModelBase):
                 value_in = kw_fit_control[key]
             if key in ['fix_dwvl','fix_fwhm','voigt']:
                 if len(np.atleast_1d(value_in)) == 1:
-                    self.fit_control[key] = np.atleast_1d(value_in).repeat(self.nline)
+                    self.fit_control[key] = np.atleast_1d(value_in).repeat(self.nlines)
                 else:
-                    assert len(value_in) == self.nline, f'Length mismatch between central_wavelengths and {key}'
+                    assert len(value_in) == self.nlines, f'Length mismatch between central_wavelengths and {key}'
                     self.fit_control[key] = np.atleast_1d(value_in)
             else:
                 self.fit_control[key] = value_in
@@ -503,6 +497,33 @@ class LineProfile(ModelBase):
 
 
 class LineSynth(ModelBase):
-    def __init__(self):
-        pass
+    def evaluate(self,xx):
+        wvl, flux = self.fsynth(**self.synth_parameters)
+        smoothed = utils.smooth_spectrum(wvl,flux,self.model_parameters['vFWHM'])
+        return utils.rebin(wvl,smoothed,xx,conserve_count=False)
 
+    def update(self,xx,yy):
+        x0 = [self.synth_parameters[key] for key in self.update_synth_parameters]
+        if not self.fit_control['fix_vFWHM']:
+            x0.append(self.model_parameters['vFWHM'])
+        def f_residual(xi):
+            for x,key in zip(xi,self.update_synth_parameters):
+                self.synth_parameters[key] = x
+            if not self.fit_control['fix_vFWHM']:
+                self.model_parameters['vFWHM'] = xi[-1]
+            return np.sum((self.evaluate(xx)-yy)**2.)
+        res = minimize(f_residual,x0=x0)
+        residual = f_residual(res.x)
+
+    def __init__(self, 
+        fsynth, vfwhm_in = 5.0,
+        niterate = 10, low_rej = 3., high_rej = 5., grow = 0.05,
+        naverage = 1, fit_mode = 'subtract',
+        samples = [], std_from_central = False, kw_fit_control = {}):
+        super().__init__(
+            self.evaluate, self.update,
+            niterate = niterate, low_rej = low_rej, high_rej = high_rej, grow = grow,
+            naverage = naverage, fit_mode = fit_mode,
+            samples = samples, std_from_central = std_from_central)
+        self.model_parameters = {'vFWHM':vfwhm_in}
+        self.fit_control = {'fix_vFWHM': True}
