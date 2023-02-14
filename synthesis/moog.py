@@ -10,7 +10,7 @@ from arcane_dev.mdlatm import marcs
 
 ## Detail see Params.f
 moog_default_input = {
-    'freeform' : 1,
+    'freeform' : 0,
     'atmosphere':1,
     'molecules':2,
     'lines':1,
@@ -137,8 +137,8 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         if key[0] == 'A':
             atomnum = int(key[2:])
             abundances[atomnum] = val - (solar_moog[atomnum-1] + feh)
-        if key[1] == 'I':
-            isospecies = key[2:]
+        if key[0] == 'I':
+            isospecies = '.'.join(key[2:].split('_'))
             isotopes[isospecies] = 1.0/val
 
     if (type(linelist) is dict) or (type(linelist) is pandas.DataFrame): 
@@ -243,7 +243,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
             for key,val in abundances.items():
                 f.write('{0:d} {1:7.3f}\n'.format(key,val))
         if len(isotopes)>0:
-            f.write('{0:20s}{8:d} 1\n'.format('isotopes',len(isotopes)))
+            f.write('{0:20s}{1:d} 1\n'.format('isotopes',len(isotopes)))
             for key,val in isotopes.items():
                 f.write('{0:s} {1:7.3f}\n'.format(key,val))
         if mode in ['synth']:
@@ -261,7 +261,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         
 
     ## Run MOOG
-    os.system(f'MOOGSILENT >& {flog} ')
+    os.system(f'MOOGSILENT > {flog} 2>&1')
     
     return fsummary
 
@@ -277,7 +277,9 @@ def synth(**kwargs):
     '''
     fsummary = run_moog('synth',**kwargs)
     with open(fsummary,'r') as f:
-        [f.readline() for ii in range(3)]
+        line = ''
+        while not line.startswith('MODEL'):
+            line = f.readline()
         line = f.readline()
         ws,wf,dwvl,wm = [float(l) for l in line.strip().split()]
         wvl = np.arange(ws,wf+dwvl,dwvl)
@@ -289,6 +291,6 @@ def synth(**kwargs):
                     flux.append(float(l))
     flux = np.array(flux)
     wvl = wvl[0:len(flux)]
-    return wvl,flux
+    return wvl,1.0-flux
 
 
