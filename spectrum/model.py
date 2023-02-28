@@ -412,7 +412,7 @@ class LineProfile(ModelBase):
             utils.voigt_depth_fwhm_fgfwhm(ew,self.model_parameters['fwhm'][-1],self.model_parameters['fgfwhm'][-1])
 
     def get_ews(self):
-        return [utils.get_voigt_EW2(\
+        return [utils.voigt_EW_fwhm_fgfwhm(\
             self.model_parameters['depth'][ii], 
             self.model_parameters['fwhm'][ii], 
             self.model_parameters['fgfwhm'][ii]) for ii in range(self.nlines)]

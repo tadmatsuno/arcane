@@ -131,15 +131,6 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
 
     if (mode in ['cog','cogsyn','blends']) and (species_vary ==0):
         raise ValueError(f'For {key} driver, species_vary needs to be specified')
-    abundances = {}
-    isotopes = {}
-    for key,val in kw_args.items():
-        if key[0] == 'A':
-            atomnum = int(key[2:])
-            abundances[atomnum] = val - (solar_moog[atomnum-1] + feh)
-        if key[0] == 'I':
-            isospecies = '.'.join(key[2:].split('_'))
-            isotopes[isospecies] = 1.0/val
 
     if (type(linelist) is dict) or (type(linelist) is pandas.DataFrame): 
         # Create linelist if it is not a filename
@@ -210,6 +201,8 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         assert not vt is None,'vt is needed'
         model = marcs.read_marcs(marcs_mod_file)
         write_marcs2moog_model(fmodelin,model,vt, feh_overwrite = feh)
+        if feh is None:
+           feh = model['m_h']
     else:
         if feh_mod is None:
             feh_mod = feh
@@ -222,6 +215,15 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
             alphafe=alphafe_mod, outofgrid_error=True)
         write_marcs2moog_model(fmodelin,model,vt, feh_overwrite = feh)
  
+    abundances = {}
+    isotopes = {}
+    for key,val in kw_args.items():
+        if key[0] == 'A':
+            atomnum = int(key[2:])
+            abundances[atomnum] = val - (solar_moog[atomnum-1] + feh)
+        if key[0] == 'I':
+            isospecies = '.'.join(key[2:].split('_'))
+            isotopes[isospecies] = 1.0/val
     
     ## Write MOOG input files
     if key in kw_args.keys():
