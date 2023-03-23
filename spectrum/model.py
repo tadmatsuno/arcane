@@ -510,20 +510,185 @@ class LineSynth(ModelBase):
             for x,key in zip(xi,self.update_synth_parameters):
                 self.synth_parameters[key] = x
             if not self.fit_control['fix_vFWHM']:
+                # FWHM is also one of the fitting parameters
                 self.model_parameters['vFWHM'] = xi[-1]
             return np.sum((self.evaluate(xx)-yy)**2.)
         res = minimize(f_residual,x0=x0)
         residual = f_residual(res.x)
 
     def __init__(self, 
-        fsynth, vfwhm_in = 5.0,
+        fsynth, synth_parameters, parameters_to_fit, vfwhm_in = 5.0,
         niterate = 10, low_rej = 3., high_rej = 5., grow = 0.05,
         naverage = 1, fit_mode = 'subtract',
-        samples = [], std_from_central = False, kw_fit_control = {}):
+        samples = [], std_from_central = False, kw_fit_control = {'fix_vFWHM':True}):
+        '''
+        This class is to fit a synthetic spectrum to an observed spectrum
+        If only one parameter, excluding vFWHM, is to be fit, use LineSynth1param,
+        which is much faster thanks to the use of interpolation.
+        
+        Parameters
+        ----------
+        fsynth : function
+            A function that returns a synthetic spectrum. See synthesis.moog and synthesis.turbospectrum
+        
+        synth_parameters : dict
+            Parameters for fsynth. Usually, model atmosphere, linelist, and abundances are needed.
+        
+        parameters_to_fit : list of str
+            Parameters to be fit. These parameters must be included in the keys of synth_parameters.
+        
+        vfwhm_in : real
+            Initial guess of the instrumental FWHM in km/s
+
+        niterate : int
+            Number of iterations for sigma clipping
+        
+        low_rej : real
+            The lower threshold for rejection.
+        
+        high_rej : real
+            The upper threshold for rejection.
+
+        grow : real
+            Data points within [grow] wavelength within rejected points will also be rejected.
+
+        naverage : int
+            Binning
+
+        fit_mode : str
+            either 'subtract' or 'ratio'
+
+        samples : list of list
+            Regions used for fitting.
+
+        kw_fit_control : dict
+            Keywords for fitting control, for example whether to fix vFWHM or not.
+        '''
+
         super().__init__(
             self.evaluate, self.update,
             niterate = niterate, low_rej = low_rej, high_rej = high_rej, grow = grow,
             naverage = naverage, fit_mode = fit_mode,
             samples = samples, std_from_central = std_from_central)
+        for key in parameters_to_fit.keys():
+            assert key in synth_parameters.keys(), f'{key} must be included in synth_parameters'
+        self.fsynth = fsynth
+        self.synth_parameters = synth_parameters
+        self.update_synth_parameters = parameters_to_fit
         self.model_parameters = {'vFWHM':vfwhm_in}
-        self.fit_control = {'fix_vFWHM': True}
+        self.fit_control = kw_fit_control.copy()
+
+class LineSynth1param(ModelBase):
+    def evaluate(self,xx , force_recompute = False):
+        if force_recompute:
+            wvl, flux = self.fsynth(**self.synth_parameters)
+        else:
+            x1 = self.synth_parameters[self.update_synth_parameter] // self.grid_size
+            x2 = x1 + 1
+            if not x1 in self.grid.keys():
+                dict_synth_tmp = self.synth_parameters.copy()
+                dict_synth_tmp[self.update_synth_parameter] = self.grid_size * x1
+                wvl,flux = self.fsynth(**dict_synth_tmp)
+                self.grid[x1] = flux
+                self.grid['wvl'] = wvl
+            if not x2 in self.grid.keys():
+                dict_synth_tmp = self.synth_parameters.copy()
+                dict_synth_tmp[self.update_synth_parameter] = self.grid_size * x2
+                wvl,flux = self.fsynth(**dict_synth_tmp)
+                self.grid[x2] = flux
+                self.grid['wvl'] = wvl
+            wvl = self.grid['wvl'] 
+            f1 = (x2 * self.grid_size - self.synth_parameters[self.update_synth_parameter])/self.grid_size
+            f2 = 1. - f1
+            flux = f1 * self.grid[x1] + f2 * self.grid[x2]
+        smoothed = utils.smooth_spectrum(wvl,flux,self.model_parameters['vFWHM'])
+        return utils.rebin(wvl,smoothed,xx,conserve_count=False)
+
+    def update(self,xx,yy):
+        x0 = [self.synth_parameters[self.update_synth_parameter]]
+        if not self.fit_control['fix_vFWHM']:
+            x0.append(self.model_parameters['vFWHM'])
+        def f_residual(xi):
+            self.synth_parameters[self.update_synth_parameter] = xi[0]
+            if not self.fit_control['fix_vFWHM']:
+                # FWHM is also one of the fitting parameters
+                self.model_parameters['vFWHM'] = xi[1]
+            return np.sum((self.evaluate(xx)-yy)**2.)
+        res = minimize(f_residual,x0=x0)
+        residual = f_residual(res.x)
+
+    def __init__(self, 
+        fsynth, synth_parameters, parameter_to_fit, vfwhm_in = 5.0,
+        grid_size = 0.1, grid_scale = 'linear',
+        niterate = 10, low_rej = 3., high_rej = 5., grow = 0.05,
+        naverage = 1, fit_mode = 'subtract',
+        samples = [], std_from_central = False, 
+        kw_fit_control = {'fix_vFWHM':True}):
+        '''
+        This class is to fit a synthetic spectrum to an observed spectrum.
+        Only one parameter can be fit. If more than one parameter is to be fit, use LineSynth.
+        Note that linear interpolation is adopted.
+
+        Parameters
+        ----------
+        fsynth : function
+            A function that returns a synthetic spectrum. See synthesis.moog and synthesis.turbospectrum
+        
+        synth_parameters : dict
+            Parameters for fsynth. Usually, model atmosphere, linelist, and abundances are needed.
+        
+        parameter_to_fit : str
+            The parameter to be fit. The parameter must be included in the keys of synth_parameters.
+        
+        vfwhm_in : real
+            Initial guess of the instrumental FWHM in km/s
+        
+        grid_size : real
+            The grid size for interpolation
+        
+        grid_scale : str
+            The scale of the grid. Either 'linear' or 'log'
+
+        niterate : int
+            Number of iterations for sigma clipping
+        
+        low_rej : real
+            The lower threshold for rejection.
+        
+        high_rej : real
+            The upper threshold for rejection.
+
+        grow : real
+            Data points within [grow] wavelength within rejected points will also be rejected.
+
+        naverage : int
+            Binning
+
+        fit_mode : str
+            either 'subtract' or 'ratio'
+
+        samples : list of list
+            Regions used for fitting.
+
+        kw_fit_control : dict
+            Keywords for fitting control, for example whether to fix vFWHM or not.
+            fix_vFWHM : bool
+                Whether to fix vFWHM or not.
+        '''
+        
+        super().__init__(
+            self.evaluate, self.update,
+            niterate = niterate, low_rej = low_rej, high_rej = high_rej, grow = grow,
+            naverage = naverage, fit_mode = fit_mode,
+            samples = samples, std_from_central = std_from_central)
+        assert parameter_to_fit in synth_parameters.keys(), f'{parameter_to_fit} must be included in synth_parameters'
+        self.fsynth = fsynth
+        self.synth_parameters = synth_parameters
+        self.update_synth_parameter = parameter_to_fit
+        self.model_parameters = {'vFWHM':vfwhm_in}
+        assert grid_size > 0, 'grid_size must be positive'
+        self.grid_size = grid_size
+        assert grid_scale in ['linear','log'], 'grid_scale must be either linear or log'
+        self.grid_scale = grid_scale
+        self.fit_control = kw_fit_control.copy()
+        self.grid = {}

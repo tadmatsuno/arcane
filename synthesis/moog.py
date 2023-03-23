@@ -6,7 +6,9 @@ import pandas
 import warnings
 import numpy as np
 from arcane_dev.utils.solarabundance import get_atomnum
+from arcane_dev.utils import utils
 from arcane_dev.mdlatm import marcs
+
 
 ## Detail see Params.f
 moog_default_input = {
@@ -39,11 +41,21 @@ solar_moog = [
 
 def get_moog_species_id(species):
     '''
+    Convert species string to moog_id
     MgI -> 12.0
     Mg1 -> 12.0
     CH -> 106.00000
-    caveat 1: can't deal with molecules ending with I
-    caveat 2: doesn't support isotopes
+    caveat can't deal with molecules ending with I
+    caveat doesn't support isotopes
+    
+    Parameters
+    ----------
+    specoes : str
+    
+    Returns
+    -------
+    str.
+    
     '''
     species = species.replace(' ','')
     if (species[-1]!='I') and (not species[-1].isnumeric()):
@@ -70,10 +82,31 @@ def get_moog_species_id(species):
     return species_id
 
 def write_marcs2moog_model(fname,model,vt,feh_overwrite = None):
-    ### MOOG treats all the models as plane-parallel (Right?).
-    ### This has an inconsistency if you use a spherical model for giant,
-    ### but spherical models are better than plane-parallel models even if 
-    ### the radiative transfer code assumes plane-parallel (Heiter & Eriksson 2006)
+    '''
+    Write MARCS model to MOOG format.
+    
+    ### Note ###
+    MOOG treats all the models as plane-parallel (Right?).
+    This has an inconsistency if you use a spherical model for giant,
+    but spherical models are better than plane-parallel models even if 
+    the radiative transfer code assumes plane-parallel (Heiter & Eriksson 2006)
+    ### ###
+    
+    Parameters
+    ----------
+    fname : str
+        Filename to write
+    model : str or dict
+        MARCS model filename or MARCS model dictionary
+    vt : float
+        Microturbulence velocity in km/s
+    feh_overwrite : float, optional
+        Overwrite the metallicity in MARCS model. The default is None.
+    
+    Returns
+    -------
+    None. 
+    '''
     if type(model) is str:
         model = marcs.read_marcs(model)
     with open(fname,'w') as f:
@@ -121,6 +154,96 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     dwvl_step = 0.01,
     cog_ew_minmax = [-7,-4],
     **kw_args):
+    '''
+    Run MOOG with a given linelist and model atmosphere.
+    Necessary inputs are
+        - mode
+        - linelist
+        - (teff, logg, feh, alphafe, vt), (marcs_mod_file, vt), or moog_mod_file
+        - species_vary if mode is 'cog', 'cogsyn', or 'blends'
+
+    1. to specify abundance of an element, provide A_{proton_number} = log(N_X/N_H) + 12
+        e.g., A_6 = 8.43
+    2. to specify isotope ratio, provide I_{molecule id}_{isotope_id}
+        e.g., I_106_00113 = 0.01
+        Note that for consistency, the given isotope ratio will be multiplied to the original abundance,
+        i.e., which is the opposite to what is adopted in MOOG. 
+
+    Parameters
+    ----------
+    mode : str
+        'syn' : synthetic spectrum
+        'cog' : COG
+        'cogsyn' : COG + synthetic spectrum
+        'blends' : blends
+
+    linelist : str or dict or pandas.DataFrame
+        If it is a string, it is the filename of the linelist in MOOG format.
+        If it is a dict or pandas.DataFrame, it is the linelist, which should have the following keys:
+        'wvl', one of ('species', 'moog_species'), 'loggf', 'chi'
+        optional keys: 'ew', 'dampnum', 'd0'
+    
+    run_id : str, optional
+        The run_id will be used to name the output files.
+        The default is ''.
+
+    workdir : str, optional
+        The directory where the output files will be saved.
+
+    moog_mod_file : str, optional
+        The filename of the model atmosphere in MOOG format.
+    
+    marcs_mod_file : str, optional
+        The filename of the model atmosphere in MARCS format.
+    
+    teff : float, optional
+        Effective temperature of the model atmosphere.
+        
+    logg : float, optional
+        Surface gravity of the model atmosphere.
+    
+    feh_mod : float, optional
+        Metallicity of the model atmosphere.
+    
+    alphafe_mod : float, optional
+        Alpha enhancement of the model atmosphere.
+        If not specified, the standard composition will be used.
+    
+    vt : float, optional
+        Microturbulence. Note that it will be ignored if moog_mod_file is given.
+    
+    feh : float, optional
+        Overall scaling for the metal abundances.
+    
+    alphafe : float, optional
+        Overall scaling for the alpha abundances.
+        Not implemented yet.
+    
+    defalut_dampnum : float, optional
+        Default damping constant for the lines.
+        The default is 3.0.
+    
+    species_vary : int, optional
+        The species to vary its abundance in cog, cogsyn, blends in MOOG.
+
+    dwvl_margin : float, optional
+        The margin in wavelength for the synthetic spectrum.   
+        The default is 2.0.
+    
+    dwvl_step : float, optional
+        The wavelength step for the synthetic spectrum.
+        The default is 0.01.
+    
+    cog_ew_minmax : list, optional
+        The EW range for the COG.
+        The default is [-7,-4].
+
+    Returns
+    -------
+    fsummary : str
+        The filename of the MOOG summary file.
+    
+    '''
 
     flinelist = f'{workdir}/line_{run_id}.in'
     fmodelin  = f'{workdir}/model_{run_id}.in'
@@ -190,7 +313,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         if any([not val is None for val in \
             [marcs_mod_file, teff, logg, feh, alphafe, feh_mod, alphafe_mod, vt]]):
             warnings.warn('moog_mod_file is provided. '+\
-                'marc_mod_file, teff, logg, feh, alphafe, feh_mod, alphafe_mod will be ignored')
+                'marc_mod_file, teff, logg, feh, alphafe, feh_mod, alphafe_mod, vt will be ignored')
         shutil.copy(moog_mod_file,fmodelin)
     elif not marcs_mod_file is None:
         assert os.path.exists(marcs_mod_file),'marcs_mod_file specified does not exist'
@@ -268,31 +391,115 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     return fsummary
 
         
-def synth(**kwargs):
+def synth(linelist, run_id = '', workdir = '.',
+    moog_mod_file = None, marcs_mod_file = None, 
+    teff = None, logg = None, feh = None, alphafe = None, 
+    feh_mod = None, alphafe_mod = None,
+    vt = None, 
+    defalut_dampnum = 3.,
+    species_vary = 0,
+    dwvl_margin = 2.0,
+    dwvl_step = 0.01,
+    cog_ew_minmax = [-7,-4],
+    **kw_args):
     '''
-    Usage:
-
+    Run MOOG SYNTH to generate synthetic spectrum
+    necessary parameters:
+        linelist: linelist file name or pandas DataFrame
+    
     1. to specify abundance of an element, provide A_{proton_number} = log(N_X/N_H) + 12
         e.g., A_6 = 8.43
-    2. to specify isotope ratio, provide I_{proton number}_{atomic_mass}
-        e.g., I_6_13 = 0.01
+    2. to specify isotope ratio, provide I_{molecule id}_{isotope_id}
+        e.g., I_106_00113 = 0.01
+        Note that for consistency, the given isotope ratio will be multiplied to the original abundance,
+        i.e., which is the opposite to what is adopted in MOOG. 
+
+    See also moog.run_moog for other parameters    
     '''
-    fsummary = run_moog('synth',**kwargs)
-    with open(fsummary,'r') as f:
-        line = ''
-        while not line.startswith('MODEL'):
+    if (type(linelist) is dict) or (type(linelist) is pandas.DataFrame): 
+        # Create linelist if it is not a filename        
+        if type(linelist) is pandas.DataFrame: 
+            # Convert pandas DataFrame to dict
+            linelist = linelist.to_dict(orient='list')
+            nlines = len(linelist['wavelength'])
+            wvlline = np.array(linelist['wavelength'])
+            wvlmin = np.min(linelist['wavelength'])
+            wvlmax = np.max(linelist['wavelength'])
+    else:
+        # Read linelist if it is a filename
+        with open(linelist,'r') as f:
+            lines = f.readlines()
+            wvlline = np.array([float(line.split()[0]) for line in lines[1:]])
+            wvlmin = np.min(wvlline)
+            wvlmax = np.max(wvlline)
+        nlines = len(lines)
+    if nlines < 2500:                
+        fsummary = run_moog('synth',linelist, run_id = run_id, workdir = workdir,
+                            moog_mod_file = moog_mod_file, marcs_mod_file = marcs_mod_file,
+                            teff = teff, logg = logg, feh = feh, alphafe = alphafe,
+                            feh_mod = feh_mod, alphafe_mod = alphafe_mod,
+                            vt = vt,
+                            defalut_dampnum = defalut_dampnum,
+                            species_vary = species_vary,
+                            dwvl_margin = dwvl_margin,
+                            dwvl_step = dwvl_step,
+                            cog_ew_minmax = cog_ew_minmax,
+                            **kw_args)        
+        with open(fsummary,'r') as f:
+            line = ''
+            while not line.startswith('MODEL'):
+                line = f.readline()
             line = f.readline()
-        line = f.readline()
-        ws,wf,dwvl,wm = [float(l) for l in line.strip().split()]
-        wvl = np.arange(ws,wf+dwvl,dwvl)
-        flux = []
-        for line in f.readlines():
-            for ii in range(10):
-                l = line[ii*7:(ii+1)*7]
-                if l.strip() != '':
-                    flux.append(float(l))
-    flux = np.array(flux)
-    wvl = wvl[0:len(flux)]
-    return wvl,1.0-flux
+            ws,wf,dwvl,wm = [float(l) for l in line.strip().split()]
+            wvl = np.arange(ws,wf+dwvl,dwvl)
+            flux = []
+            for line in f.readlines():
+                for ii in range(10):
+                    l = line[ii*7:(ii+1)*7]
+                    if l.strip() != '':
+                        flux.append(float(l))
+        flux = np.array(flux)
+        wvl = wvl[0:len(flux)]
+        return wvl,1.0-flux
+    else:
+        nsteps = nlines // 2500 + 2
+        wvl = np.arange(wvlmin,wvlmax+dwvl_step,dwvl_step)
+        i_start = 0
+        neach = nlines // nsteps + 1
+        flx = np.zeros(len(wvl))+np.nan
+        for ii in range(nsteps):
+            wvl1 = wvl[i_start]
+            wvl2 = wvl[i_start+neach]
+            indices = np.nonzero((wvl1 - wvl1/5000 <wvlline)&(wvlline < wvl2 + wvl2/5000))[0]
+            if len(indices) > 2500:
+                warnings.warn('Too many lines in the wavelength range. Margin decreased.')
+                indices = np.nonzero((wvl1 - wvl1/15000 <wvlline)&(wvlline < wvl2 + wvl2/15000))[0]
+                if len(indices)>2500:
+                    raise ValueError('Too many lines in the wavelength range. Consider removing non-significant lines.')
+            if type(linelist) is str:
+                tmp_linelist = workdir+f'/linelist{ii}.tmp'
+                with open(tmp_linelist,'w') as f:
+                    f.write(lines[0])
+                    for line in lines[1+indices]:
+                        f.write(line)
+            else:
+                tmp_linelist = {}
+                for key,val in linelist.items():
+                    tmp_linelist[key] = np.array(val)[indices]
+            wvl_tmp, flx_tmp = synth(tmp_linelist, run_id = run_id+f'_{ii}', workdir = workdir,
+                moog_mod_file = moog_mod_file, marcs_mod_file = marcs_mod_file,
+                teff = teff, logg = logg, feh = feh, alphafe = alphafe,
+                feh_mod = feh_mod, alphafe_mod = alphafe_mod,
+                vt = vt,
+                defalut_dampnum = defalut_dampnum,
+                species_vary = species_vary,
+                dwvl_margin = dwvl_margin,
+                dwvl_step = dwvl_step,
+                cog_ew_minmax = cog_ew_minmax,
+                **kw_args)
+            out_indices = np.nonzero((wvl1<=wvl)&(wvl<=wvl2))[0]
+            flx[out_indices] = utils.rebin(wvl_tmp,flx_tmp,wvl[out_indices],conserve_count=False)
+            i_start += neach
+        return wvl,flx
 
 
