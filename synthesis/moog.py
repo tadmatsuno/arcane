@@ -130,9 +130,6 @@ def write_marcs2moog_model(fname,model,vt,feh_overwrite = None):
             f.write('{0:10s}{1:3d}{2:8.3f}\n'.format('NATOM',0,feh_overwrite))
  
         ###TODO ### 
-        ### I think it should allow to have a metallicity that is different from what is used 
-        ### to construct a model atmosphere. UMP/HMP stars might not have a corresponding marcs
-        ### model computed.
         ### Sholud I also allow turbospectrum like abundance input? alpha/Fe, s/Fe, r/Fe etc?
 
         f.write('{0:10s}{1:d}\n'.format('NMOL',22))

@@ -1,5 +1,5 @@
 import numpy as np
-from ..utils import utils
+from arcane_dev.utils import utils
 from scipy.interpolate import splev, splrep
 import warnings
 from scipy.optimize import minimize,LinearConstraint,Bounds
@@ -356,9 +356,9 @@ class LineProfile(ModelBase):
                     for sidx in sindices.split(','):
                         idx = int(sidx)
                         self.model_parameters['fwhm'][idx] = xi[ii]*self.model_parameters['fgfwhm'][ii]
-            return np.sum((self.evaluate(xx) - yy)**2.)
+            return np.sum((self.evaluate(xx) - yy)**2.)*(self.snr)**2
         res = minimize(f_residual, x0=x0, \
-            bounds= Bounds(const_low,const_high))
+            bounds= Bounds(const_low,const_high),options={'ftol':0.01/len(xx)})
         residual = f_residual(res.x)
 
 
@@ -420,7 +420,7 @@ class LineProfile(ModelBase):
     def __init__(self, central_wavelengths, 
         initial_depth = 0.3, initial_fwhm = 0.1,
         niterate = 10, low_rej = 3., high_rej = 5., grow = 0.05,
-        naverage = 1, fit_mode = 'subtract',
+        naverage = 1, fit_mode = 'subtract', snr = 50.,
         samples = [], std_from_central = False, kw_fit_control = {}):
         '''
         Continuum expressed with a polynomical function
@@ -468,6 +468,7 @@ class LineProfile(ModelBase):
             niterate = niterate, low_rej = low_rej, high_rej = high_rej, grow = grow,
             naverage = naverage, fit_mode = fit_mode,
             samples = samples, std_from_central = std_from_central)
+        self.snr = snr
         self.initial_depth = initial_depth
         self.initial_fwhm = initial_fwhm
         self.nlines = len(np.atleast_1d(central_wavelengths))
@@ -503,17 +504,34 @@ class LineSynth(ModelBase):
         return utils.rebin(wvl,smoothed,xx,conserve_count=False)
 
     def update(self,xx,yy):
-        x0 = [self.synth_parameters[key] for key in self.update_synth_parameters]
+        x0 = []
+        bounds = []
+        for key in self.update_synth_parameters:
+            if key.startswith('I_'):
+                x0.append(np.log10(self.synth_parameters[key]))
+            else:
+                x0.append(self.synth_parameters[key])
+            bounds.append((None,None))
         if not self.fit_control['fix_vFWHM']:
             x0.append(self.model_parameters['vFWHM'])
+            bounds.append((0.0,None))
+        initial_simplex = np.array([np.array(x0)]*(len(x0)+1))
+        for ii in range(len(x0)):
+            initial_simplex[ii+1,ii] += 0.1
         def f_residual(xi):
             for x,key in zip(xi,self.update_synth_parameters):
-                self.synth_parameters[key] = x
+                if key.startswith('I_'):
+                    self.synth_parameters[key] = 10.**x
+                else:
+                    self.synth_parameters[key] = x
             if not self.fit_control['fix_vFWHM']:
                 # FWHM is also one of the fitting parameters
                 self.model_parameters['vFWHM'] = xi[-1]
             return np.sum((self.evaluate(xx)-yy)**2.)
-        res = minimize(f_residual,x0=x0)
+        res = minimize(f_residual,
+            x0 = x0, bounds = bounds,
+            options={'initial_simplex':initial_simplex,'xatol':0.1},\
+            method='Nelder-Mead')
         residual = f_residual(res.x)
 
     def __init__(self, 
@@ -570,7 +588,7 @@ class LineSynth(ModelBase):
             niterate = niterate, low_rej = low_rej, high_rej = high_rej, grow = grow,
             naverage = naverage, fit_mode = fit_mode,
             samples = samples, std_from_central = std_from_central)
-        for key in parameters_to_fit.keys():
+        for key in parameters_to_fit:
             assert key in synth_parameters.keys(), f'{key} must be included in synth_parameters'
         self.fsynth = fsynth
         self.synth_parameters = synth_parameters
@@ -580,7 +598,7 @@ class LineSynth(ModelBase):
 
 class LineSynth1param(ModelBase):
     def evaluate(self,xx , force_recompute = False):
-        if force_recompute:
+        if force_recompute or (self.grid_size == 0.0):
             wvl, flux = self.fsynth(**self.synth_parameters)
         else:
             x1 = self.synth_parameters[self.update_synth_parameter] // self.grid_size
@@ -605,21 +623,39 @@ class LineSynth1param(ModelBase):
         return utils.rebin(wvl,smoothed,xx,conserve_count=False)
 
     def update(self,xx,yy):
-        x0 = [self.synth_parameters[self.update_synth_parameter]]
+        if self.update_synth_parameter.startswith('I_'):
+            # If isotpe ratio, use log scale
+            x0 = [np.log10(self.synth_parameters[self.update_synth_parameter])]
+            xatol = 0.1
+        else:
+            x0 = [self.synth_parameters[self.update_synth_parameter]]
+            xatol = 0.001
+        bounds = [(None,None)]
         if not self.fit_control['fix_vFWHM']:
             x0.append(self.model_parameters['vFWHM'])
+            bounds.append((0.0,None))
+        initial_simplex = np.array([np.array(x0)]*(len(x0)+1))
+        for ii in range(len(x0)):
+            initial_simplex[ii+1,ii] += 0.1
         def f_residual(xi):
-            self.synth_parameters[self.update_synth_parameter] = xi[0]
+            if self.update_synth_parameter.startswith('I_'):
+                self.synth_parameters[self.update_synth_parameter] = 10.**xi[0]
+            else:
+                self.synth_parameters[self.update_synth_parameter] = xi[0]
             if not self.fit_control['fix_vFWHM']:
                 # FWHM is also one of the fitting parameters
                 self.model_parameters['vFWHM'] = xi[1]
-            return np.sum((self.evaluate(xx)-yy)**2.)
-        res = minimize(f_residual,x0=x0)
+            residual = np.sum((self.evaluate(xx,self.fit_control['force_recompute'])-yy)**2.)*(self.snr**2.0)
+            return residual
+        res = minimize(f_residual,
+            x0 = x0, bounds = bounds,
+            options={'initial_simplex':initial_simplex,'xatol':xatol},\
+            method='Nelder-Mead')
         residual = f_residual(res.x)
 
     def __init__(self, 
         fsynth, synth_parameters, parameter_to_fit, vfwhm_in = 5.0,
-        grid_size = 0.1, grid_scale = 'linear',
+        grid_size = 0.1, grid_scale = 'linear', snr=50.,
         niterate = 10, low_rej = 3., high_rej = 5., grow = 0.05,
         naverage = 1, fit_mode = 'subtract',
         samples = [], std_from_central = False, 
@@ -649,6 +685,9 @@ class LineSynth1param(ModelBase):
         grid_scale : str
             The scale of the grid. Either 'linear' or 'log'
 
+        snr : real
+            The signal-to-noise ratio of the synthetic spectrum. 
+            
         niterate : int
             Number of iterations for sigma clipping
         
@@ -675,6 +714,7 @@ class LineSynth1param(ModelBase):
             fix_vFWHM : bool
                 Whether to fix vFWHM or not.
         '''
+        fit_control_default = {'fix_vFWHM':True, 'force_recompute':False}
         
         super().__init__(
             self.evaluate, self.update,
@@ -683,12 +723,16 @@ class LineSynth1param(ModelBase):
             samples = samples, std_from_central = std_from_central)
         assert parameter_to_fit in synth_parameters.keys(), f'{parameter_to_fit} must be included in synth_parameters'
         self.fsynth = fsynth
+        self.snr = snr
         self.synth_parameters = synth_parameters
         self.update_synth_parameter = parameter_to_fit
         self.model_parameters = {'vFWHM':vfwhm_in}
-        assert grid_size > 0, 'grid_size must be positive'
         self.grid_size = grid_size
         assert grid_scale in ['linear','log'], 'grid_scale must be either linear or log'
         self.grid_scale = grid_scale
-        self.fit_control = kw_fit_control.copy()
+        self.fit_control = fit_control_default.copy()
+        for key,val in kw_fit_control.items():
+            self.fit_control[key] = val
+        if self.grid_size == 0.0:
+            self.fit_control['force_recompute'] = True
         self.grid = {}
