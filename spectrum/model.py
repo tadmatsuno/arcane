@@ -736,3 +736,28 @@ class LineSynth1param(ModelBase):
         if self.grid_size == 0.0:
             self.fit_control['force_recompute'] = True
         self.grid = {}
+
+class ContinuumAbsorptionModel:
+    def __init__(self,model_absorption,model_continuum = None, niterate = 5) -> None:
+        self.model_absorption = model_absorption
+        self.model_continuum = model_continuum
+        self.niterate = niterate
+    
+    def __call__(self):
+        assert hasattr(self,'wavelength'), 'Set wavelength first!'
+        if self.model_continuum is None:
+            return 1.0 - self.model_absorption.evaluate(self.wavelength)
+        else:
+            return self.model_continuum.evaluate(self.wavelength) * (1.0 - self.model_absorption.evaluate(self.wavelength))
+
+    def fit(self,xx,yy):
+        if self.model_continuum is None:
+            self.model_absorption.fit(xx,1.0-yy)
+        else:
+            for ii in range(self.niterate):
+                if ii == 0:
+                    self.model_continuum.fit(xx,yy)
+                else:
+                    self.model_continuum.fit(xx, yy / (1.0-self.model_absorption.evaluate(xx)))
+                self.model_absorption.fit(xx,1.0 - yy/self.model_continuum.evaluate(xx))
+
