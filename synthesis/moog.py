@@ -18,7 +18,7 @@ moog_default_input = {
     'lines':1,
     'gfstyle':0,
     'units':0,
-    'flux/int':0,
+    'flux_int':0,
     'damping':1,
     'scat':1,
     'molset':1,
@@ -165,6 +165,8 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         e.g., I_106_00113 = 0.01
         Note that for consistency, the given isotope ratio will be multiplied to the original abundance,
         i.e., which is the opposite to what is adopted in MOOG. 
+
+    See MOOG/Params.f for input parameters.
 
     Parameters
     ----------
@@ -349,7 +351,9 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     if key in kw_args.keys():
         if (not (key[0] in ['I','A'])) and (not (key in moog_default_input.keys())):
             warnings.warn(f'{key} is not in moog default input list,'+
-                'and thus will be ignored')
+                'and thus will be ignored. See moog.moog_default_input for valid keys.\n'+\
+                f'If you believe {key} is a valid MOOG input parameter,'+\
+                'consider adding it to moog_default_input')
     with open('batch.par','w') as f:
         f.write(mode+'\n')
         f.write('{0:20s}"{1:s}"\n'.format('standard_out',fstdout))
@@ -359,6 +363,8 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         for key,val in moog_default_input.items():
             if key in kw_args.keys():
                 val = kw_args[key] # Overwrite default parameter 
+            if key == 'flux_int':
+                key = 'flux/int'
             f.write('{0:20s}{1:d}\n'.format(key,val))
         if len(abundances)>0:
             f.write('{0:20s}{1:d} 1\n'.format('abundances',len(abundances)))
