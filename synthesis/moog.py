@@ -457,7 +457,7 @@ def synth(linelist, run_id = '', workdir = '.',
                         flux.append(float(l))
         flux = np.array(flux)
         wvl = wvl[0:len(flux)]
-        return wvl,1.0-flux
+        return wvl,flux
     else:
         nsteps = nlines // 2500 + 2
         wvl = np.arange(wvlmin,wvlmax+dwvl_step,dwvl_step)
