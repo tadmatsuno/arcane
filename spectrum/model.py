@@ -739,6 +739,12 @@ class LineSynth1param(ModelBase):
 
 class ContinuumAbsorptionModel:
     def __init__(self,model_absorption,model_continuum = None, niterate = 5) -> None:
+        '''
+        This class is to model the continuum and absorption simultaneously.
+        The fit is done by iteratively fitting the continuum and absorption, so
+        even if the continuum is slightly contaminated by the wings of the absorption,
+        the fit should still be good.
+        '''
         self.model_absorption = model_absorption
         self.model_continuum = model_continuum
         self.niterate = niterate
