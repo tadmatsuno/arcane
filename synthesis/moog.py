@@ -180,6 +180,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         If it is a string, it is the filename of the linelist in MOOG format.
         If it is a dict or pandas.DataFrame, it is the linelist, which should have the following keys:
         'wvl', one of ('species', 'moog_species'), 'loggf', 'chi'
+        It is strongly recommended to pass moog_species as str, not float.
         optional keys: 'ew', 'dampnum', 'd0'
     
     run_id : str, optional
@@ -268,6 +269,12 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
 
         if not 'moog_species' in linelist.keys():
             linelist['moog_species'] = get_moog_species_id(linelist['species'])
+        try:
+            _ = f'{linelist["moog_species"][0]:s}'
+        except ValueError:
+            linelist['moog_species'] = [f'{x:.5f}' for x in linelist['moog_species']]
+            warnings.warn('It is strongly recommended to pass moog_species as str, not float.')    
+
         nline = len(linelist['wavelength'])
         # Fill missing information with 0
         if not 'ew' in linelist.keys():
