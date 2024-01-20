@@ -137,7 +137,7 @@ class Avg3d(ModelAtm):
     '''
     def __init__(self,*args,**kwargs):
         super(Avg3d,self).__init__(*args,**kwargs)
-    def write(self,filename):
-        marcs.write_marcs(filename,self)
-    def resample(self,lgTauR):
-        return marcs.resample(self,lgTauR)
+#    def write(self,filename):
+#        marcs.write_marcs(filename,self)
+#    def resample(self,lgTauR):
+#        return marcs.resample(self,lgTauR)

@@ -2,7 +2,7 @@ import numpy as np
 import pandas
 from arcane_dev.utils import utils
 from scipy.interpolate import CubicSpline
-from base import ModelAtm
+from arcane_dev.mdlatm.base import ModelAtm
 
 data_dir = '/mnt/d/model_atm/MARCS/' ## CHANGE THIS 
 with open(data_dir+'MARCS_avai.dat') as fout:
