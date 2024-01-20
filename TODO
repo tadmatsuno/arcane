@@ -1,6 +1,8 @@
-- Maybe allow alpha_fe, s_fe, r_fe inputs?
-- Add a turbospectrum support
 - Allow MOOG to take VALD linelist class as an input
 - Allow batch analysis
   - Read a single linelist probably from VALD, and a configuration file where each line presents the species to fit, the wavelength window for absorption lines and for continuum estimation, and possibility to remove and add lines 
 - Add a parallel calculation for MOOG. Create and work in a temporary directry
+- Add a function that adopts a correction (non-LTE or 3D) based on a precomputed grid
+
+- Maybe allow alpha_fe, s_fe, r_fe inputs?
+- Add a turbospectrum, pySME support as well as their non-LTE functionalities
