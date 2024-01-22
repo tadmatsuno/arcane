@@ -12,6 +12,9 @@ def read_valdshort(filename):
     linelist = []
     with open(filename, 'r') as f:
         line = f.readline()
+        while (line.lstrip().startswith('#')):
+            # Read until the header, which should contain 'Ion'
+            line = f.readline()
         extract_stellar = 'lines selected,' in line # Linelist extracted from stellar has ''lines selected,' in the header
         while (not 'Ion' in line):
             # Read until the header, which should contain 'Ion'
@@ -53,6 +56,9 @@ def read_valdlong(filename):
     linelist = []
     with open(filename, 'r') as f:
         line = f.readline()
+        while (line.lstrip().startswith('#')):
+            # Read until the header, which should contain 'Ion'
+            line = f.readline()
         extract_stellar = 'lines selected,' in line # Linelist extracted from stellar has ''lines selected,' in the header
         while (not 'Ion' in line):
             # Read until the header, which should contain 'Ion'
