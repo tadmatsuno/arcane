@@ -7,8 +7,8 @@ import warnings
 import numpy as np
 from arcane_dev.utils.solarabundance import get_atomnum
 from arcane_dev.utils import utils
-from arcane_dev.mdlatm import marcs
-
+from arcane_dev.mdlatm import marcs,avg3d
+from arcane_dev.synthesis
 
 ## Detail see Params.f
 moog_default_input = {
@@ -45,8 +45,10 @@ def get_moog_species_id(species):
     MgI -> 12.0
     Mg1 -> 12.0
     CH -> 106.00000
-    caveat can't deal with molecules ending with I
-    caveat doesn't support isotopes
+    spaces are ignored
+
+    caveat: it can't deal with molecules ending with I
+    caveat: it doesn't support isotopes at the moment
     
     Parameters
     ----------
@@ -113,16 +115,25 @@ def write_marcs2moog_model(fname,model,vt,feh_overwrite = None):
         f.write('BEGN\n')
         f.write('MARCS {0:1s}_t{1:4.0f}g{2:5.2f}m{3:5.2f}a{4:5.2f}\n'.format(\
             model['geometry'][0],model['teff'],model['logg'],model['m_h'],model['alpha_m']))
-        f.write('{0:10s}{1:d}\n'.format('NTAU',model['ndepth']))
-        for ii in range(model['ndepth']):
-            f.write('{0:10.3f} {1:10.1f} {2:.4E} {3:.4E} {4:.4f} {5:.4E}\n'.format(\
-                model['lgTauR'][ii],
-                model['T'][ii],
-                model['Pg'][ii],
-                model['Pe'][ii],
-                model['Mu'][ii],
-                model['KappaRoss'][ii],
-                ))
+        if model['ndepth']>100:
+            mask = model['lgTauR']<2
+            if np.sum(mask)>100:
+                warnings.warn('Nlayler must be <= 100. Cut out to 100th layer')
+                mask[100:] = False
+            f.write('{0:10s}{1:d}\n'.format('NTAU',np.sum(mask)))
+        else:
+            mask = np.ones(model['ndepth'],dtype=bool)
+            f.write('{0:10s}{1:d}\n'.format('NTAU',model['ndepth']))
+        for ii in range(np.sum(mask)):
+            if mask[ii]:
+                f.write('{0:10.3f} {1:10.1f} {2:.4E} {3:.4E} {4:.4f} {5:.4E}\n'.format(\
+                    model['lgTauR'][ii],
+                    model['T'][ii],
+                    model['Pg'][ii],
+                    model['Pe'][ii],
+                    model['Mu'][ii],
+                    model['KappaRoss'][ii],
+                    ))
         f.write(f'{vt:6.3f}\n')
         if feh_overwrite is None:
             f.write('{0:10s}{1:3d}{2:8.3f}\n'.format('NATOM',0,model['m_h']))
@@ -141,11 +152,12 @@ def write_marcs2moog_model(fname,model,vt,feh_overwrite = None):
         f.write('  1.1 6.1     7.1     8.1   12.1  22.1  26.1\n') 
 
 def run_moog(mode, linelist, run_id = '', workdir = '.',
-    moog_mod_file = None, marcs_mod_file = None, 
+    moog_mod_file = None, mod_file = None, 
     teff = None, logg = None, feh = None, alphafe = None, 
     feh_mod = None, alphafe_mod = None,
+    mdlatm_io = 'marcs',
     vt = None, 
-    defalut_dampnum = 3.,
+    defalut_gamma_vw = 3.,
     species_vary = 0,
     dwvl_margin = 2.0,
     dwvl_step = 0.01,
@@ -156,7 +168,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     Necessary inputs are
         - mode
         - linelist
-        - (teff, logg, feh, alphafe, vt), (marcs_mod_file, vt), or moog_mod_file
+        - (teff, logg, feh, alphafe, vt), (mod_file, vt), or moog_mod_file
         - species_vary if mode is 'cog', 'cogsyn', or 'blends'
 
     1. to specify abundance of an element, provide A_{proton_number} = log(N_X/N_H) + 12
@@ -176,12 +188,13 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         'cogsyn' : COG + synthetic spectrum
         'blends' : blends
 
-    linelist : str or dict or pandas.DataFrame
+    linelist : Linelist class, str or dict or pandas.DataFrame
         If it is a string, it is the filename of the linelist in MOOG format.
         If it is a dict or pandas.DataFrame, it is the linelist, which should have the following keys:
         'wvl', one of ('species', 'moog_species'), 'loggf', 'chi'
         It is strongly recommended to pass moog_species as str, not float.
-        optional keys: 'ew', 'dampnum', 'd0'
+        optional keys: 'ew', 'gamma_vw', 'd0'
+        Note that the MOOG currently does not allow one to change damping parameters for Stark and radiation damping.
     
     run_id : str, optional
         The run_id will be used to name the output files.
@@ -193,8 +206,8 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     moog_mod_file : str, optional
         The filename of the model atmosphere in MOOG format.
     
-    marcs_mod_file : str, optional
-        The filename of the model atmosphere in MARCS format.
+    mod_file : str, optional
+        The filename of the model atmosphere.
     
     teff : float, optional
         Effective temperature of the model atmosphere.
@@ -209,6 +222,9 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         Alpha enhancement of the model atmosphere.
         If not specified, the standard composition will be used.
     
+    mdlatm_io : string
+        the io module for model atmosphere. default is marcs 
+    
     vt : float, optional
         Microturbulence. Note that it will be ignored if moog_mod_file is given.
     
@@ -219,9 +235,10 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         Overall scaling for the alpha abundances.
         Not implemented yet.
     
-    defalut_dampnum : float, optional
-        Default damping constant for the lines.
-        The default is 3.0.
+    defalut_gamma_vw : float, optional
+        Default Van der Waals damping constant for the lines.
+        The default is 3.0, (the Unsold approximation will be multiplied by 3.0)
+        If you use Vald, <0 will be used as valid inputs. For lines with gamma_vw = 0.0, the above default value will be used.
     
     species_vary : int, optional
         The species to vary its abundance in cog, cogsyn, blends in MOOG.
@@ -250,6 +267,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     fstdout   = f'{workdir}/moog_{run_id}.std'
     fsummary  = f'{workdir}/moog_{run_id}.sum'
     flog  = f'{workdir}/moog_{run_id}.log'
+    mdlatm = globals()[mdlatm_io]
 
 
     if (mode in ['cog','cogsyn','blends']) and (species_vary ==0):
@@ -282,10 +300,10 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
                 warnings.warn('you are supposed to provide ew for the task abfind')
             linelist['ew'] = np.zeros(nline)
         linelist['ew'] = np.where(np.isfinite(linelist['ew']),linelist['ew'],0.0)
-        if not 'dampnum' in linelist.keys():
-            linelist['dampnum'] = np.zeros(nline) + defalut_dampnum
-        linelist['dampnum'] = np.where(np.isfinite(linelist['dampnum']),
-                linelist['dampnum'],defalut_dampnum)
+        if not 'gamma_vw' in linelist.keys():
+            linelist['gamma_vw'] = np.zeros(nline) + defalut_gamma_vw
+        linelist['gamma_vw'] = np.where(np.isfinite(linelist['gamma_vw'])|(linelist['gamma_vw']==0.),
+                linelist['gamma_vw'],defalut_gamma_vw)
         if not 'd0' in linelist.keys():
             linelist['d0'] = np.zeros(nline)
         linelist['d0'] = np.where(np.isfinite(linelist['d0']),linelist['d0'],0.0)
@@ -303,7 +321,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
                         linelist['moog_species'][ii],
                         linelist['chi'][ii],
                         linelist['loggf'][ii],
-                        linelist['dampnum'][ii],
+                        linelist['gamma_vw'][ii],
                         linelist['d0'][ii],
                         linelist['ew'][ii]
                 ))
@@ -317,18 +335,18 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     if not moog_mod_file is None:
         assert os.path.exists(moog_mod_file), 'moog_mod_file specified does not exist'
         if any([not val is None for val in \
-            [marcs_mod_file, teff, logg, feh, alphafe, feh_mod, alphafe_mod, vt]]):
+            [mod_file, teff, logg, feh, alphafe, feh_mod, alphafe_mod, vt]]):
             warnings.warn('moog_mod_file is provided. '+\
                 'marc_mod_file, teff, logg, feh, alphafe, feh_mod, alphafe_mod, vt will be ignored')
         shutil.copy(moog_mod_file,fmodelin)
-    elif not marcs_mod_file is None:
-        assert os.path.exists(marcs_mod_file),'marcs_mod_file specified does not exist'
+    elif not mod_file is None:
         if not all((teff is None, logg is None,feh_mod is None, alphafe_mod is None )):
             warnings.warn(
-                'MARCS model file is directly provided. '+\
+                'model file is directly provided. '+\
                 'Teff, logg, [Fe/H]_mod, and [alpha/Fe]_mod will be ignored')
+        assert os.path.exists(mod_file),'mod_file specified does not exist'
         assert not vt is None,'vt is needed'
-        model = marcs.read_marcs(marcs_mod_file)
+        model = mdlatm.read_model(mod_file)
         write_marcs2moog_model(fmodelin,model,vt, feh_overwrite = feh)
         if feh is None:
            feh = model['m_h']
@@ -339,8 +357,8 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
             alphafe_mod = alphafe
         if any([val is None for val in [teff, logg, feh_mod, vt]]):
             raise ValueError('At least four parameters, teff, logg, feh_mod,vt are needed')
-        modelatm_file = f'{workdir}/marcs_{run_id}.mod'
-        model = marcs.get_marcs_mod(teff, logg, feh_mod, \
+        modelatm_file = f'{workdir}/model_{run_id}.mod'
+        model = mdlatm.get_model(teff, logg, feh_mod, \
             alphafe=alphafe_mod, outofgrid_error=True)
         write_marcs2moog_model(fmodelin,model,vt, feh_overwrite = feh)
  
@@ -406,7 +424,7 @@ def synth(linelist, run_id = '', workdir = '.',
     teff = None, logg = None, feh = None, alphafe = None, 
     feh_mod = None, alphafe_mod = None,
     vt = None, 
-    defalut_dampnum = 3.,
+    defalut_gamma_vw = 3.,
     species_vary = 0,
     dwvl_margin = 2.0,
     dwvl_step = 0.01,
@@ -414,6 +432,8 @@ def synth(linelist, run_id = '', workdir = '.',
     **kw_args):
     '''
     Run MOOG SYNTH to generate synthetic spectrum
+    see also moog.run_moog
+    
     necessary parameters:
         linelist: linelist file name or pandas DataFrame
     
@@ -431,10 +451,10 @@ def synth(linelist, run_id = '', workdir = '.',
         if type(linelist) is pandas.DataFrame: 
             # Convert pandas DataFrame to dict
             linelist = linelist.to_dict(orient='list')
-            nlines = len(linelist['wavelength'])
-            wvlline = np.array(linelist['wavelength'])
-            wvlmin = np.min(linelist['wavelength'])
-            wvlmax = np.max(linelist['wavelength'])
+        nlines = len(linelist['wavelength'])
+        wvlline = np.array(linelist['wavelength'])
+        wvlmin = np.min(linelist['wavelength'])
+        wvlmax = np.max(linelist['wavelength'])
     else:
         # Read linelist if it is a filename
         with open(linelist,'r') as f:
@@ -449,7 +469,7 @@ def synth(linelist, run_id = '', workdir = '.',
                             teff = teff, logg = logg, feh = feh, alphafe = alphafe,
                             feh_mod = feh_mod, alphafe_mod = alphafe_mod,
                             vt = vt,
-                            defalut_dampnum = defalut_dampnum,
+                            defalut_gamma_vw = defalut_gamma_vw,
                             species_vary = species_vary,
                             dwvl_margin = dwvl_margin,
                             dwvl_step = dwvl_step,
@@ -475,17 +495,18 @@ def synth(linelist, run_id = '', workdir = '.',
         nsteps = nlines // 2500 + 2
         wvl = np.arange(wvlmin,wvlmax+dwvl_step,dwvl_step)
         i_start = 0
-        neach = nlines // nsteps + 1
+        neach = len(wvl) // nsteps + 1
         flx = np.zeros(len(wvl))+np.nan
         for ii in range(nsteps):
             wvl1 = wvl[i_start]
-            wvl2 = wvl[i_start+neach]
+            wvl2 = wvl[np.minimum(i_start+neach,len(wvl)-1)]
+#            print(wvl1,wvl2)
             indices = np.nonzero((wvl1 - wvl1/5000 <wvlline)&(wvlline < wvl2 + wvl2/5000))[0]
             if len(indices) > 2500:
-                warnings.warn('Too many lines in the wavelength range. Margin decreased.')
+                warnings.warn('Too many lines {} in the wavelength range. Margin decreased.'.format(len(indices)))
                 indices = np.nonzero((wvl1 - wvl1/15000 <wvlline)&(wvlline < wvl2 + wvl2/15000))[0]
                 if len(indices)>2500:
-                    raise ValueError('Too many lines in the wavelength range. Consider removing non-significant lines.')
+                    raise ValueError('Too many lines {} in the wavelength range. Consider removing non-significant lines.'.format(len(indices)))
             if type(linelist) is str:
                 tmp_linelist = workdir+f'/linelist{ii}.tmp'
                 with open(tmp_linelist,'w') as f:
@@ -501,7 +522,7 @@ def synth(linelist, run_id = '', workdir = '.',
                 teff = teff, logg = logg, feh = feh, alphafe = alphafe,
                 feh_mod = feh_mod, alphafe_mod = alphafe_mod,
                 vt = vt,
-                defalut_dampnum = defalut_dampnum,
+                defalut_gamma_vw = defalut_gamma_vw,
                 species_vary = species_vary,
                 dwvl_margin = dwvl_margin,
                 dwvl_step = dwvl_step,
