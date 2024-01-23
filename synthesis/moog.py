@@ -8,7 +8,6 @@ import numpy as np
 from arcane_dev.utils.solarabundance import get_atomnum
 from arcane_dev.utils import utils
 from arcane_dev.mdlatm import marcs,avg3d
-from arcane_dev.synthesis
 
 ## Detail see Params.f
 moog_default_input = {
