@@ -23,7 +23,7 @@ def read_valdshort(filename):
         while (line.count(',')>5):
             values = line.split(',')
             if extract_stellar:
-                species = values[0]
+                species = values[0].replace("'","")
                 wavelength = float(values[1])
                 expot = float(values[2])
                 loggf = float(values[4])
@@ -33,7 +33,7 @@ def read_valdshort(filename):
                 lande = float(values[8])
                 references = values[10]
             else:
-                species = values[0]
+                species = values[0].replace("'","")
                 wavelength = float(values[1])
                 expot = float(values[2])
                 loggf = float(values[3])
@@ -49,7 +49,7 @@ def read_valdshort(filename):
             line = f.readline()
         linelist = Linelist(linelist, \
             columns=['species', 'wavelength', 'expot', 'loggf',\
-                'gamrad', 'gamqst', 'gamvw', 'lande', 'references','HFS'])
+                'gamma_rad', 'gamma_stark', 'gamma_vw', 'lande', 'references','HFS'])
     return linelist
 
 def read_valdlong(filename):
@@ -67,7 +67,7 @@ def read_valdlong(filename):
         while (line.count(',')>5):
             values = line.split(',')
             if extract_stellar:
-                species = values[0]
+                species = values[0].replace("'","")
                 wavelength = float(values[1])
                 loggf = float(values[2])
                 expot_lo = float(values[3])
@@ -81,7 +81,7 @@ def read_valdlong(filename):
                 gamqst = float(values[11])
                 gamvw = float(values[12])
             else:
-                species = values[0]
+                species = values[0].replace("'","")
                 wavelength = float(values[1])
                 loggf = float(values[2])
                 expot_lo = float(values[3])
@@ -125,7 +125,7 @@ def read_valdlong(filename):
             line = f.readline()
         linelist = Linelist(linelist, \
             columns=['species', 'wavelength', 'loggf', 'expot', 'j_lo', 'expot_up', 'j_up', \
-                 'lande_lo', 'lande_up', 'lande', 'gamrad', 'gamqst', 'gamvw', \
+                 'lande_lo', 'lande_up', 'lande', 'gamma_rad', 'gamma_stark', 'gamma_vw', \
                 'coupling_lo', 'electron_conf_lo', 'term_desig_lo',
                 'coupling_up', 'electron_conf_up', 'term_desig_hi', 'references', 'HFS'])
     return linelist

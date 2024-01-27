@@ -66,20 +66,28 @@ def get_moog_species_id(species):
         for ii,s in enumerate(species):
             if s.isupper():
                 if ii!=0:
-                    atomnums.append(get_atomnum(species[i0,ii+1]))
+                    atomnums.append(get_atomnum(species[i0:ii]))
                 i0 = ii
+        atomnums.append(get_atomnum(species[i0:]))
         atomnums = np.sort(atomnums)[::-1]
-        species_id = '{0:d}.00000'.format(\
-            np.sum([atomnums[i]*10**(2*i) for  i in range(len(atomnums))]))
+        species_id = '{0:.0f}.00000'.format(\
+            np.round(np.sum([atomnums[i]*10**(2*i) for  i in range(len(atomnums))])))
     else:
         # atom
-        if species[-1].isnumeric():
-            species_id = '{0:2d}.{1:1d}'.format(\
-                get_atomnum(species[:-1]),(int(species[-1])-1))
-        else:
-            species_id = '{0:2d}.{1:1d}'.format(\
-                get_atomnum(species[:species.find('I',1)]),
-                species.count('I',1)-1)
+        try:
+            if species[-1].isnumeric():
+                species_id = '{0:2d}.{1:1d}'.format(\
+                    get_atomnum(species[:-1]),(int(species[-1])-1))
+            else:
+                species_id = '{0:2d}.{1:1d}'.format(\
+                    get_atomnum(species[:species.find('I',1)]),
+                    species.count('I',1)-1)
+        except ValueError:
+            # Could be molecule
+            if species[-1].isnumeric():
+                return get_moog_species_id(species[:-1])
+            else:
+                return get_moog_species_id(species[:species.find('I',1)])
     return species_id
 
 def write_marcs2moog_model(fname,model,vt,feh_overwrite = None):
@@ -190,7 +198,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     linelist : Linelist class, str or dict or pandas.DataFrame
         If it is a string, it is the filename of the linelist in MOOG format.
         If it is a dict or pandas.DataFrame, it is the linelist, which should have the following keys:
-        'wvl', one of ('species', 'moog_species'), 'loggf', 'chi'
+        'wvl', one of ('species', 'moog_species'), 'loggf', 'expot'
         It is strongly recommended to pass moog_species as str, not float.
         optional keys: 'ew', 'gamma_vw', 'd0'
         Note that the MOOG currently does not allow one to change damping parameters for Stark and radiation damping.
@@ -272,20 +280,20 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     if (mode in ['cog','cogsyn','blends']) and (species_vary ==0):
         raise ValueError(f'For {key} driver, species_vary needs to be specified')
 
-    if (type(linelist) is dict) or (type(linelist) is pandas.DataFrame): 
+    if isinstance(linelist,(dict,pandas.DataFrame)): 
         # Create linelist if it is not a filename
         
         if type(linelist) is pandas.DataFrame: 
             # Convert pandas DataFrame to dict
             linelist = linelist.to_dict(orient='list')
         # First check if linelist dict has all the necessary information
-        for key in ['wavelength','chi','loggf']:
+        for key in ['wavelength','expot','loggf']:
             assert key in linelist.keys(), f'{key} needs to be in linelist keys'
         assert ('species' in linelist.keys())|('moog_species' in linelist.keys()),\
             'species or moog_species needs to be in linelist keys'
 
         if not 'moog_species' in linelist.keys():
-            linelist['moog_species'] = get_moog_species_id(linelist['species'])
+            linelist['moog_species'] = [get_moog_species_id(species) for species in linelist['species']]
         try:
             _ = f'{linelist["moog_species"][0]:s}'
         except ValueError:
@@ -312,13 +320,13 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
             f.write('Linelist createad by arcane\n')
             #TODO:Support for HFS?   
             for ii in range(nline):
-                if linelist['chi'][ii] >= 50:
-                    warnings.warn('lines with chi>50 ev will be skipped')
+                if linelist['expot'][ii] >= 50:
+                    warnings.warn('lines with expot>50 ev will be skipped')
                     continue
                 f.write("{0:10.3f}{1:>10s}{2:10.3f}{3:10.3f}{4:10.3f}{5:10.3f}{6:10.3f}\n".\
                     format(linelist['wavelength'][ii],
                         linelist['moog_species'][ii],
-                        linelist['chi'][ii],
+                        linelist['expot'][ii],
                         linelist['loggf'][ii],
                         linelist['gamma_vw'][ii],
                         linelist['d0'][ii],
@@ -417,6 +425,24 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     
     return fsummary
 
+def read_moog_sum_synth(fsummary):
+    with open(fsummary,'r') as f:
+        line = ''
+        while not line.startswith('MODEL'):
+            line = f.readline()
+        line = f.readline()
+        ws,wf,dwvl,wm = [float(l) for l in line.strip().split()]
+        wvl = np.arange(ws,wf+dwvl,dwvl)
+        flux = []
+        for line in f.readlines():
+            for ii in range(10):
+                l = line[ii*7:(ii+1)*7]
+                if l.strip() != '':
+                    flux.append(float(l))
+    flux = np.array(flux)
+    wvl = wvl[0:len(flux)]
+    return wvl,flux
+
         
 def synth(linelist, run_id = '', workdir = '.',
     moog_mod_file = None, marcs_mod_file = None, 
@@ -445,7 +471,7 @@ def synth(linelist, run_id = '', workdir = '.',
 
     See also moog.run_moog for other parameters    
     '''
-    if (type(linelist) is dict) or (type(linelist) is pandas.DataFrame): 
+    if isinstance(linelist,(dict,pandas.DataFrame)): 
         # Create linelist if it is not a filename        
         if type(linelist) is pandas.DataFrame: 
             # Convert pandas DataFrame to dict
@@ -473,22 +499,8 @@ def synth(linelist, run_id = '', workdir = '.',
                             dwvl_margin = dwvl_margin,
                             dwvl_step = dwvl_step,
                             cog_ew_minmax = cog_ew_minmax,
-                            **kw_args)        
-        with open(fsummary,'r') as f:
-            line = ''
-            while not line.startswith('MODEL'):
-                line = f.readline()
-            line = f.readline()
-            ws,wf,dwvl,wm = [float(l) for l in line.strip().split()]
-            wvl = np.arange(ws,wf+dwvl,dwvl)
-            flux = []
-            for line in f.readlines():
-                for ii in range(10):
-                    l = line[ii*7:(ii+1)*7]
-                    if l.strip() != '':
-                        flux.append(float(l))
-        flux = np.array(flux)
-        wvl = wvl[0:len(flux)]
+                            **kw_args)
+        wvl,flux = read_moog_sum_synth(fsummary)        
         return wvl,flux
     else:
         nsteps = nlines // 2500 + 2
