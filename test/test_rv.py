@@ -21,6 +21,6 @@ class TestCrossCorr(unittest.TestCase):
         yy_obs = fy(xx/(1.0+vshift/ckm)-wc) + \
             noise_level*np.random.randn(len(xx))
         vshift_obs = cross_corr.measure_vshift(xx,yy,yy_obs,max_shift=20.)
-        self.assertTrue(np.allclose(vshift,-vshift_obs,atol=0.5))
+        self.assertTrue(np.allclose(vshift,vshift_obs,atol=0.5))
 if __name__ == '__main__':
     unittest.main()

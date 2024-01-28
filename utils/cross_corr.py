@@ -11,6 +11,8 @@ def measure_vshift(wvl,flx1,flx2,max_shift=1000,wvl2=None)\
     -> float:
     '''
     Measure the velocity shift between two spectra.
+    The flx2 is estimated to be redshifted by vshift relative to flx1.
+    (so divide wvl2 by (1+vshift/ckm) to correct for redshift)
 
     Parameters
     ----------
@@ -27,6 +29,7 @@ def measure_vshift(wvl,flx1,flx2,max_shift=1000,wvl2=None)\
         Wavelength array of the second spectrum. 
         If not provided, the wavelength array of the first spectrum is used.
     
+        
     Returns
     -------
     vshift : float
@@ -54,4 +57,4 @@ def measure_vshift(wvl,flx1,flx2,max_shift=1000,wvl2=None)\
     res = minimize(lambda x: -fcor(x),xcor[np.argmax(ycor)])
     vshift = res.x[0]
 #    return xcor,ycor,vshift
-    return vshift
+    return -vshift
