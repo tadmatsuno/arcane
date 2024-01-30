@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.interpolate import splrep, splint
+from scipy.interpolate import splrep, splint,splev
 from scipy.special import voigt_profile
 from astropy.constants import c
 from scipy.spatial import KDTree
@@ -60,7 +60,7 @@ def average_nbins(nbin,x,y):
       np.sum([dx[0+ii:nfin:nbin] for ii in range(nbin)],axis=0)
     return xx,yy
 
-def rebin(x,y,xnew,conserve_count=True): 
+def rebin(x,y,xnew,conserve_count=True,fast=False): 
   '''
   This function conducts re-binning of a spectrum.
 
@@ -82,6 +82,10 @@ def rebin(x,y,xnew,conserve_count=True):
     the same as sum(y). Useful when flux is shown in photon counts.
     If False, intergration is conserved. 
 
+  fast: bool
+    if True, it is just a smple interpolation and interpolated flux is 
+    not integrated for each pixel.
+
   Returns
   -------
     ynew : list of float
@@ -92,13 +96,19 @@ def rebin(x,y,xnew,conserve_count=True):
   dxnew = get_dx(xnew) 
   if conserve_count: # total count conserved (input is per pix)
       spl = splrep(x,y/dx,k=1,task=0,s=0) 
-      return np.array([splint(xn-0.5*dxn,xn+0.5*dxn,spl) \
-        for xn,dxn in zip(xnew,dxnew)]) 
+      if fast:
+        return splev(xnew,spl)*dxnew
+      else:
+        return np.array([splint(xn-0.5*dxn,xn+0.5*dxn,spl) \
+          for xn,dxn in zip(xnew,dxnew)]) 
   else: #total flux conserved (input is in physical unit)
         #use this for normalized spectra
       spl = splrep(x,y,k=1,task=0,s=0) 
-      return np.array([splint(xn-0.5*dxn,xn+0.5*dxn,spl)/dxn \
-        for xn,dxn in zip(xnew,dxnew)]) 
+      if fast:
+        return splev(xnew,spl)
+      else:
+        return np.array([splint(xn-0.5*dxn,xn+0.5*dxn,spl)/dxn \
+          for xn,dxn in zip(xnew,dxnew)]) 
 
 def x_sorted(xx,yy):
   '''
@@ -494,12 +504,11 @@ def get_grid_value(grid_points,target, outside='nearest'):
         f'The input value is too high. available:{np.max(grid_points)} target={target}')
   if (np.min(grid_points)==target)|(np.max(grid_points)==target):
     return target,target,True
-  p1 = np.max(grid_points[grid_points<target])
   p2 = np.min(grid_points[grid_points>=target])
   if p2==target:
     return p2,p2,True
-  else:
-    return p1,p2,True
+  p1 = np.max(grid_points[grid_points<target])
+  return p1,p2,True
 
 def smooth_spectrum(wvl,flx,vfwhm):
   wvlmin,wvlmax = min(wvl),max(wvl)
