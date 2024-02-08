@@ -16,7 +16,7 @@ from scipy.special import voigt_profile
 from scipy.stats import linregress
 from scipy.optimize import minimize,LinearConstraint
 from .pyqtlinesfit import Ui_Dialog
-from pycont import myspec_utils as utils
+from arcane.utils import utils
 import os 
 import iofiles
 from ..utils import utils
@@ -25,6 +25,13 @@ from ..utils import utils
 gfactfwhm = 2.0*np.sqrt(2.0*np.log(2.0))
 lfactfwhm = 2.0
 vfwhm = lambda fg,fl:0.5346*fl + np.sqrt(0.2166*fl*fl + fg*fg)
+
+with open(os.path.join(__file__[:__file__.rfind('/')],'pnum_symbol.csv'),'r') as f:
+  ptable = {}
+  for line in f.readlines():
+    pnum,symb = line.strip().split(',')
+    ptable[int(pnum)] = symb
+
 
 
 class LoadResults:
@@ -720,12 +727,12 @@ class MainWindow(QWidget,Ui_Dialog):
   '''
   Class for main window
   '''
-  def __init__(self,parent=None):
+  def __init__(self,parent=None,resolution = 60000.):
     super(MainWindow,self).__init__(parent)
     self.ui = Ui_Dialog()
     self.ui.setupUi(self)
 
-    self.oneline = OneLine()
+    self.oneline = OneLine(resolution=resolution)
     self.canvas  =  PlotCanvas(self.ui.left_grid,self.ui.main_figure)
     
     self.ui.inwvls = [self.ui.inwvl1,self.ui.inwvl2,self.ui.inwvl3,self.ui.inwvl4,self.ui.inwvl5] # input wavelengths
@@ -1367,9 +1374,9 @@ class MainWindow(QWidget,Ui_Dialog):
 
 def startgui(wavelength,flux,\
     wavelength_lines,
-    fout=None,flog=None,elemid=None,gf=None,ep=None):
+    fout=None,flog=None,elemid=None,gf=None,ep=None, resolution = 60000.):
   app = QApplication(sys.argv)
-  window = MainWindow()
+  window = MainWindow(resolution = resolution)
   window.input_data(wavelength,flux,wavelength_lines,
     fout=fout,flog=flog,elemid=elemid,gf=gf,ep=ep)
   window.fit_line(window.wavelength_lines[window.iline])
