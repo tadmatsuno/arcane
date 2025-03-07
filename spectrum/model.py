@@ -1,10 +1,20 @@
 import numpy as np
-from arcane_dev.utils import utils
-from scipy.interpolate import splev, splrep
+from arcane_dev.utils import utils, cross_corr
+from scipy.interpolate import splev, splrep,interp1d
 import warnings
 from scipy.optimize import minimize,LinearConstraint,Bounds
+import copy
+import tqdm
+from astropy.constants import c
+import multiprocessing as mp
+from functools import partial
+ckm = c.to('km/s').value
 
-
+def _fit4parallel(_model,fparam,xx,yy):
+    model = copy.deepcopy(_model)
+    model.fit(xx,yy)
+    return fparam(model)
+    
 class ModelBase:
     def __init__(self, fbase, fupdate,
         niterate = 10, low_rej = 3., high_rej= 5., grow = 0.05, 
@@ -25,17 +35,75 @@ class ModelBase:
         self.fit_mode = fit_mode
         self.std_from_central = std_from_central
     
-    def __call__(self):
+    def __call__(self,*args,**kwargs):
         if hasattr(self,'wavelength'):
-            return self.fbase(self.wavelength)
+            return self.fbase(self.wavelength,*args,**kwargs)
         else:
             print('Fit data first!')
 
+    def uncertainty(self, fparameter, std, nmc=100, iid = True, parallel = False):
+        '''
+        This function determines the uncertainty of the model by 
+        conducting MC sampling.
+        If iid is False, the effect of the continuum placement is considered.
+        i.e., every pixel is shifted by the same amount.
+        If iid is True, the effect of photon noise in each pixel is considered.
+        
+        The user must provide photon noise level or continuum placement error as std.
+
+        NOTE: this function adds error on self.flux. If you do not want to double-
+        count errors, make sure self.flux is a noise-free data (such as the best-fit model). 
+
+        Parameters
+        ----------
+        fparameter : function
+            A function that returns the parameters of interest.
+        
+        nmc: int
+            if nmc = 0 and iid = False, a MC sampling won't be performed.
+            Instead, the error is estimatead by displacing the continuum +- 1, 2, and 3 sigma.
+            The result will be a tuple, -3, -2, -1, 1, 2, 3
+        '''
+        parallel = False # For now, parallel is not supported
+        
+        model0 = copy.deepcopy(self)
+        mc_out = []
+        flux0 = self.flux.copy()
+        if iid:
+            fluxes = [flux0+std*np.random.randn(len(self.flux)) for _ in range(nmc)]
+        else:
+            if nmc > 0:
+                fluxes = [flux0+std*np.random.randn() for _ in range(nmc)]
+            else:
+                fluxes = [flux0+std*_ for _ in [-3,-2,-1,1,2,3]]
+        if parallel:
+            with mp.Pool() as pool:
+                mc_out = list(tqdm.tqdm(pool.map(partial(_fit4parallel,self,fparameter,self.wavelength),fluxes)))
+        else:
+            for flux in tqdm.tqdm(fluxes):
+                self.fit(self.wavelength,flux)
+                mc_out.append(fparameter(self))
+        #if iid:
+        #    for ii in tqdm.tqdm(range(nmc)):
+        #        self.fit(self.wavelength,flux0+std*np.random.randn(len(self.flux)))
+        #        mc_out.append(fparameter(self))
+        #else:
+        #    if nmc > 0:
+        #        for ii in tqdm.tqdm(range(nmc)):
+        #            self.fit(self.wavelength,flux0+std*np.random.randn())
+        #            mc_out.append(fparameter(self))
+        #    else:
+        #        for nsigma in [-3,-2,-1,1,2,3]:
+        #            self.fit(self.wavelength,flux0+std*nsigma)
+        #            mc_out.append(fparameter(self))
+        mc_result = {key: [d[key] for d in mc_out] for key in mc_out[0]}
+        self = copy.deepcopy(model0)
+        return mc_result
 
     def fit(self, wavelength, flux):
         self.wavelength, self.flux = \
             utils.average_nbins(self.naverage, wavelength, flux)
-        self.use_flag = utils.get_region_mask(self.wavelength, self.samples)
+        self.use_flag = utils.get_region_mask(self.wavelength, self.samples) & (np.isfinite(self.flux))
         outliers = np.array([False]*len(self.wavelength))
         for _ in range(self.niterate):
             self.use_flag = self.use_flag & (~outliers)
@@ -57,6 +125,7 @@ class ModelBase:
             else:
                 raise ValueError('fit_mode has to be either of ratio or subtract')
         self.yfit = yfit
+        self.residual_std = np.nanstd(self.flux[self.use_flag]-self.yfit[self.use_flag])
   
 class ContinuumSpline3(ModelBase):
     def _get_npt_btw_knots(self, xx, knots):
@@ -530,7 +599,7 @@ class LineSynth(ModelBase):
             return np.sum((self.evaluate(xx)-yy)**2.)
         res = minimize(f_residual,
             x0 = x0, bounds = bounds,
-            options={'initial_simplex':initial_simplex,'xatol':0.1},\
+            options={'initial_simplex':initial_simplex,'xatol':0.1,'fatol':np.inf},\
             method='Nelder-Mead')
         residual = f_residual(res.x)
 
@@ -596,47 +665,122 @@ class LineSynth(ModelBase):
         self.model_parameters = {'vFWHM':vfwhm_in}
         self.fit_control = kw_fit_control.copy()
 
+def _fsynth4parallel(dict_synth_tmp,fsynth):
+    wvl,flux = fsynth(**dict_synth_tmp)
+    return wvl,flux
+
 class LineSynth1param(ModelBase):
+    fit_control_default = {'fix_vFWHM':True, 
+                          'force_recompute':False,
+                          'delta_bounds_main':(-2,2),
+                          'bounds_main':(None,None), 
+                          'bounds_vfwhm':(0.0,15.0),
+                          'xatol':0.01}
+
     def evaluate(self,xx , force_recompute = False):
         if force_recompute or (self.grid_size == 0.0):
             wvl, flux = self.fsynth(**self.synth_parameters)
+        elif 'finterp' in self.grid.keys():
+            wvl = self.grid['wvl']
+            flux = self.grid['finterp'](self.synth_parameters[self.update_synth_parameter])
         else:
-            x1 = self.synth_parameters[self.update_synth_parameter] // self.grid_size
-            x2 = x1 + 1
+            if self.grid_scale == 'linear':
+                x1 = self.synth_parameters[self.update_synth_parameter] // self.grid_size
+                x2 = x1 + 1
+                f1 = (x2 * self.grid_size - self.synth_parameters[self.update_synth_parameter])/self.grid_size
+                f2 = 1. - f1
+            elif self.grid_scale == 'log':
+                x1 = np.log10(self.synth_parameters[self.update_synth_parameter]) // self.grid_size
+                x2 = x1 + 1
+                f1 = (x2 * self.grid_size - np.log10(self.synth_parameters[self.update_synth_parameter]))/self.grid_size
+                f2 = 1. - f1
+            else:
+                raise ValueError(f'grid_scale must be either linear or log')
+            def add_grid_point(x):
+                dict_synth_tmp = self.synth_parameters.copy()
+                if self.grid_scale == 'linear':
+                    dict_synth_tmp[self.update_synth_parameter] = self.grid_size * x
+                else:
+                    dict_synth_tmp[self.update_synth_parameter] = 10.**(self.grid_size * x)
+                wvl,flux = self.fsynth(**dict_synth_tmp)
+                self.grid[x] = flux
+                self.grid['wvl'] = wvl
             if not x1 in self.grid.keys():
-                dict_synth_tmp = self.synth_parameters.copy()
-                dict_synth_tmp[self.update_synth_parameter] = self.grid_size * x1
-                wvl,flux = self.fsynth(**dict_synth_tmp)
-                self.grid[x1] = flux
-                self.grid['wvl'] = wvl
+                add_grid_point(x1)                
             if not x2 in self.grid.keys():
-                dict_synth_tmp = self.synth_parameters.copy()
-                dict_synth_tmp[self.update_synth_parameter] = self.grid_size * x2
-                wvl,flux = self.fsynth(**dict_synth_tmp)
-                self.grid[x2] = flux
-                self.grid['wvl'] = wvl
+                add_grid_point(x2)
             wvl = self.grid['wvl'] 
-            f1 = (x2 * self.grid_size - self.synth_parameters[self.update_synth_parameter])/self.grid_size
-            f2 = 1. - f1
             flux = f1 * self.grid[x1] + f2 * self.grid[x2]
         smoothed = utils.smooth_spectrum(wvl,flux,self.model_parameters['vFWHM'])
         return utils.rebin(wvl,smoothed,xx,conserve_count=False)
+    
+    def construct_grid(self):
+        self._construct_grid(self.update_synth_parameter,self.fit_control['bounds_main'],self.grid_size,self.grid_scale)
 
+    def _construct_grid(self,name_parameter,bounds,grid_size, grid_scale):
+        '''
+        Construct 1D grid of spectra and an interpolating function
+        '''
+        assert grid_scale in ['linear','log'],'Grid scale needs to be one of linear and log'
+        if not hasattr(self,'grid'):
+            self.grid = {}
+        self.grid_size = grid_size
+        self.grid_scale = grid_scale
+        self.fit_control['bounds_main'] = bounds
+        self.update_synth_parameter = name_parameter
+        if grid_scale == 'linear':
+            xs = bounds[0] // grid_size
+            xf = bounds[1] // grid_size + 1
+        elif grid_scale == 'log':
+            xs = np.log10(bounds[0]) // grid_size
+            xf = np.log10(bounds[1]) // grid_size + 1
+        xx = int(np.round(xs))
+        xx_grids = []
+        xx_new = []
+        indicts = []
+
+        while (xx<xf):
+            xx_grids.append(xx)
+            if not xx in self.grid.keys():
+                xx_new.append(xx)
+                dict_synth_tmp = self.synth_parameters.copy()
+                if grid_scale == 'linear':
+                    dict_synth_tmp[name_parameter] = xx*grid_size
+                elif grid_scale == 'log':
+                    dict_synth_tmp[name_parameter] = 10.**(xx*grid_size)
+                dict_synth_tmp['part_of_parallel'] = True
+                indicts.append(dict_synth_tmp.copy())
+            xx = int(np.round(xx + 1,0))
+        with mp.Pool() as pool:
+            results = pool.map(partial(_fsynth4parallel,fsynth = self.fsynth),indicts)
+        for ii in range(len(xx_new)):
+            if not 'wvl' in self.grid.keys():
+                self.grid['wvl'] = results[ii][0]
+            self.grid[xx_new[ii]] = results[ii][1]
+
+#        while (xx<xf):
+#            xx_grids.append(xx)
+#            if not xx in self.grid.keys():
+#                dict_synth_tmp = self.synth_parameters.copy()
+#                if grid_scale == 'linear':
+#                    dict_synth_tmp[name_parameter] = xx*grid_size
+#                elif grid_scale == 'log':
+#                    dict_synth_tmp[name_parameter] = 10.**(xx*grid_size)
+#                wvl,flux = self.fsynth(**dict_synth_tmp)
+#                if not 'wvl' in self.grid.keys():
+#                    self.grid['wvl'] = wvl
+#                self.grid[xx] = flux
+#            xx = xx + 1
+        finterp = interp1d(np.array(xx_grids)*grid_size,np.array([self.grid[x] for x in xx_grids]).T,kind='cubic',\
+            fill_value=(self.grid[xx_grids[0]],self.grid[xx_grids[-1]]),bounds_error=False)
+        if grid_scale == 'linear':
+            self.grid['finterp'] = lambda x: finterp(x)
+        elif grid_scale == 'log':
+            self.grid['finterp'] = lambda x: finterp(np.log10(x))
+        
+            
+                
     def update(self,xx,yy):
-        if self.update_synth_parameter.startswith('I_'):
-            # If isotpe ratio, use log scale
-            x0 = [np.log10(self.synth_parameters[self.update_synth_parameter])]
-            xatol = 0.1
-        else:
-            x0 = [self.synth_parameters[self.update_synth_parameter]]
-            xatol = 0.001
-        bounds = [(None,None)]
-        if not self.fit_control['fix_vFWHM']:
-            x0.append(self.model_parameters['vFWHM'])
-            bounds.append((0.0,None))
-        initial_simplex = np.array([np.array(x0)]*(len(x0)+1))
-        for ii in range(len(x0)):
-            initial_simplex[ii+1,ii] += 0.1
         def f_residual(xi):
             if self.update_synth_parameter.startswith('I_'):
                 self.synth_parameters[self.update_synth_parameter] = 10.**xi[0]
@@ -647,11 +791,50 @@ class LineSynth1param(ModelBase):
                 self.model_parameters['vFWHM'] = xi[1]
             residual = np.sum((self.evaluate(xx,self.fit_control['force_recompute'])-yy)**2.)*(self.snr**2.0)
             return residual
+        fix_vFWHM = self.fit_control['fix_vFWHM']
+        self.fit_control['fix_vFWHM'] = True
+        if self.update_synth_parameter.startswith('I_'):
+            # If isotpe ratio, use log scale
+            if hasattr(self,'grid'):
+                grid_values = list(self.grid.keys())
+                for key in ['wvl','finterp']:
+                    if key in grid_values:
+                        grid_values.remove(key)
+                chisq = np.array([f_residual([val*self.grid_size]) for val in grid_values])
+                x0 = [np.log10(grid_values[np.argmin(chisq)]*self.grid_scale)]
+            else:
+                x0 = [np.log10(self.synth_parameters[self.update_synth_parameter])]
+        else:
+            if hasattr(self,'grid'):
+                grid_values = list(self.grid.keys())
+                for key in ['wvl','finterp']:
+                    if key in grid_values:
+                        grid_values.remove(key)
+                chisq = np.array([f_residual([val*self.grid_size]) for val in grid_values])
+                x0 = [grid_values[np.argmin(chisq)]*self.grid_size]
+            else:
+                x0 = [self.synth_parameters[self.update_synth_parameter]]
+        self.fit_control['fix_vFWHM'] = fix_vFWHM
+        xatol = self.fit_control['xatol']
+        bounds = [self.fit_control['bounds_main']]
+        
+        if not self.fit_control['fix_vFWHM']:
+            x0.append(self.model_parameters['vFWHM'])
+            bounds.append(self.fit_control['bounds_vfwhm'])
+        x0 = [np.clip(x0[ii],bounds[ii][0],bounds[ii][1]) for ii in range(len(x0))]
+        
+        initial_simplex = np.array([np.array(x0)]*(len(x0)+1))
+        for ii in range(len(x0)):
+            initial_simplex[ii+1,ii] += 0.1
         res = minimize(f_residual,
             x0 = x0, bounds = bounds,
-            options={'initial_simplex':initial_simplex,'xatol':xatol},\
+            options={'initial_simplex':initial_simplex,'xatol':xatol,'fatol':np.inf},\
             method='Nelder-Mead')
         residual = f_residual(res.x)
+        best_abun = np.atleast_1d(res.x)[0] 
+        if (np.abs(best_abun-self.fit_control['bounds_main'][0]) < self.grid_size)|\
+            (np.abs(best_abun-self.fit_control['bounds_main'][1]) < self.grid_size):
+            warnings.warn(f'Fitting parameter {self.update_synth_parameter} is near the boundary of the grid.')
 
     def __init__(self, 
         fsynth, synth_parameters, parameter_to_fit, vfwhm_in = 5.0,
@@ -659,7 +842,7 @@ class LineSynth1param(ModelBase):
         niterate = 10, low_rej = 3., high_rej = 5., grow = 0.05,
         naverage = 1, fit_mode = 'subtract',
         samples = [], std_from_central = False, 
-        kw_fit_control = {'fix_vFWHM':True}):
+        kw_fit_control = fit_control_default):
         '''
         This class is to fit a synthetic spectrum to an observed spectrum.
         Only one parameter can be fit. If more than one parameter is to be fit, use LineSynth.
@@ -714,7 +897,6 @@ class LineSynth1param(ModelBase):
             fix_vFWHM : bool
                 Whether to fix vFWHM or not.
         '''
-        fit_control_default = {'fix_vFWHM':True, 'force_recompute':False}
         
         super().__init__(
             self.evaluate, self.update,
@@ -730,15 +912,24 @@ class LineSynth1param(ModelBase):
         self.grid_size = grid_size
         assert grid_scale in ['linear','log'], 'grid_scale must be either linear or log'
         self.grid_scale = grid_scale
-        self.fit_control = fit_control_default.copy()
+        self.fit_control = self.fit_control_default.copy()
         for key,val in kw_fit_control.items():
+            if not key in self.fit_control_default.keys():
+                warnings.warn(f'{key} is not a valid parameter for fit-controlling, thus ignored.')
             self.fit_control[key] = val
+        # Manually set bounds_main if not set
+        bb = list(self.fit_control['bounds_main'])
+        for ii in range(2): 
+            if self.fit_control['bounds_main'][ii] is None:
+                bb[ii] = \
+                    self.synth_parameters[self.update_synth_parameter] + self.fit_control['delta_bounds_main'][ii]
+        self.fit_control['bounds_main'] = tuple(bb)
         if self.grid_size == 0.0:
             self.fit_control['force_recompute'] = True
-        self.grid = {}
+#        self.grid = {} # I might need to put this back 
 
 class ContinuumAbsorptionModel:
-    def __init__(self,model_absorption,model_continuum = None, niterate = 5) -> None:
+    def __init__(self,model_absorption,model_continuum = None, niterate = 3, fit_vshift=True) -> None:
         '''
         This class is to model the continuum and absorption simultaneously.
         The fit is done by iteratively fitting the continuum and absorption, so
@@ -748,22 +939,49 @@ class ContinuumAbsorptionModel:
         self.model_absorption = model_absorption
         self.model_continuum = model_continuum
         self.niterate = niterate
+        self.fit_vshift = fit_vshift
+        self.vshift = 0.0
     
-    def __call__(self):
+    def __call__(self,force_recompute=False):
         assert hasattr(self,'wavelength'), 'Set wavelength first!'
         if self.model_continuum is None:
-            return 1.0 - self.model_absorption.evaluate(self.wavelength)
+            return 1.0 - self.model_absorption.evaluate(self.wavelength,force_recompute=force_recompute)
         else:
-            return self.model_continuum.evaluate(self.wavelength) * (1.0 - self.model_absorption.evaluate(self.wavelength))
+            return self.model_continuum.evaluate(self.wavelength) * \
+                (1.0 - self.model_absorption.evaluate(self.wavelength,force_recompute=force_recompute))
 
-    def fit(self,xx,yy):
+    def evaluate(self,xx,force_recompute=False):
+        if self.model_continuum is None:
+            return 1.0 - self.model_absorption.evaluate(xx,force_recompute=force_recompute)
+        else:
+            return self.model_continuum.evaluate(xx) * \
+                (1.0 - self.model_absorption.evaluate(xx,force_recompute=force_recompute))        
+
+    def fit(self,xx_in,yy,debug=False):
+        self.wavelength = xx_in
+        self.flux = yy
+        xx = xx_in.copy()
         if self.model_continuum is None:
             self.model_absorption.fit(xx,1.0-yy)
+            if self.fit_vshift:
+                self.vshift = cross_corr.measure_vshift(xx,self.evaluate(xx),yy,max_shift=10.0)
+                self.model_absorption.fit(xx/(1.0+self.vshift/ckm),1.0-yy)
         else:
             for ii in range(self.niterate):
-                if ii == 0:
-                    self.model_continuum.fit(xx,yy)
-                else:
-                    self.model_continuum.fit(xx, yy / (1.0-self.model_absorption.evaluate(xx)))
+                #print(f'{ii+1} iteration')
+                self.model_continuum.fit(xx, yy / (1.0-self.model_absorption.evaluate(xx)))
                 self.model_absorption.fit(xx,1.0 - yy/self.model_continuum.evaluate(xx))
-
+                if debug:
+                    print(f'{ii}th guess: {self.model_absorption.synth_parameters[self.model_absorption.update_synth_parameter]:.3f}')
+                samples = np.hstack([np.hstack(self.model_continuum.samples),
+                                     np.hstack(self.model_absorption.samples)])
+                ssmin,ssmax = np.min(samples),np.max(samples)
+                maskrv = (ssmin<xx) & (xx<ssmax)
+                if self.fit_vshift and (ii==0):
+                    self.vshift = cross_corr.measure_vshift(xx[maskrv], \
+                        1.0-self.model_absorption.evaluate(xx[maskrv]), 
+                        yy[maskrv] / self.model_continuum.evaluate(xx[maskrv]),
+                        max_shift=10.0)
+                    if debug:
+                        print(f'RV estimate:{self.vshift:.3f} km/s')
+                    xx = xx_in/(1.0+self.vshift/ckm)

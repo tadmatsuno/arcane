@@ -60,7 +60,7 @@ def average_nbins(nbin,x,y):
       np.sum([dx[0+ii:nfin:nbin] for ii in range(nbin)],axis=0)
     return xx,yy
 
-def rebin(x,y,xnew,conserve_count=True,fast=False): 
+def rebin(x,y,xnew,conserve_count=True,fast=True): 
   '''
   This function conducts re-binning of a spectrum.
 
@@ -95,17 +95,17 @@ def rebin(x,y,xnew,conserve_count=True,fast=False):
   dx = get_dx(x) 
   dxnew = get_dx(xnew) 
   if conserve_count: # total count conserved (input is per pix)
-      spl = splrep(x,y/dx,k=1,task=0,s=0) 
+      spl = splrep(x,y/dx,k=3,task=0,s=0) 
       if fast:
-        return splev(xnew,spl)*dxnew
+        return splev(xnew,spl,ext=1)*dxnew
       else:
         return np.array([splint(xn-0.5*dxn,xn+0.5*dxn,spl) \
           for xn,dxn in zip(xnew,dxnew)]) 
   else: #total flux conserved (input is in physical unit)
         #use this for normalized spectra
-      spl = splrep(x,y,k=1,task=0,s=0) 
+      spl = splrep(x,y,k=3,task=0,s=0) 
       if fast:
-        return splev(xnew,spl)
+        return splev(xnew,spl,ext=1)
       else:
         return np.array([splint(xn-0.5*dxn,xn+0.5*dxn,spl)/dxn \
           for xn,dxn in zip(xnew,dxnew)]) 
@@ -510,11 +510,29 @@ def get_grid_value(grid_points,target, outside='nearest'):
   p1 = np.max(grid_points[grid_points<target])
   return p1,p2,True
 
-def smooth_spectrum(wvl,flx,vfwhm):
+def smooth_spectrum(wvl,flx,vfwhm,fwhm_vel=True):
   wvlmin,wvlmax = min(wvl),max(wvl)
   wc = (wvlmin+wvlmax)/2.0
-  dvel = (wvlmax-wvlmin)/(len(wvl)-1.0)/wc*ckm
-  vsigma = vfwhm/ (np.sqrt(8.0*np.log(2)))
-  psigma = vsigma/dvel
-  flout = gaussian_filter(flx,psigma,mode='constant',cval=1.0,truncate=10.0)
-  return flout
+  dwvl = wvl[1:]-wvl[:-1]
+  dwvlowvl = dwvl/(0.5*(wvl[1:]+wvl[:-1]))
+  if (np.abs((np.max(dwvlowvl)-np.min(dwvlowvl))/np.min(dwvlowvl)) > 0.1) & fwhm_vel :
+    print('The wavelength varies more than 10%. If you intend to smooth a spectrum with '+\
+          'a constant FWHM in velocity, it is highly recommended to rebin the spectrum  '+\
+          'to have a constant interval in log(wavelength)'+\
+          f'You are trying to smooth a spectrum from {np.min(wvl):.1f} to {np.max(wvl):.1f} with a velocity of {vfwhm:.2f}.')
+    
+  if (np.abs((np.max(dwvl)-np.min(dwvl))/np.min(dwvl)) > 0.1) & (not fwhm_vel):
+    print('If you intend to smooth a spectrum with a constant FWHM in wavelength, it is '+\
+          'highly recommended to rebin the spectrum to have a constant interval in linear'
+          'wavelength')
+#  dvel = (wvlmax-wvlmin)/(len(wvl)-1.0)/wc*ckm
+  if fwhm_vel:
+    dvel = np.median(dwvlowvl)*ckm
+    vsigma = vfwhm/ (np.sqrt(8.0*np.log(2)))
+    psigma = vsigma/dvel
+    flout = gaussian_filter(flx,psigma,mode='constant',cval=1.0,truncate=10.0)
+    return flout
+  else:
+    psigma = np.median(dwvl)
+    flout = gaussian_filter(flx,psigma,mode='constant',cval=1.0,truncate=10.0)
+    return flout

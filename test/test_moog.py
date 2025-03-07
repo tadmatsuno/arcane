@@ -13,6 +13,7 @@ hd122563 = iofiles.readspip('./DATA/HD122563plsp.op')
 linelist = pandas.read_csv('./vald/stellar_short.csv',dtype={'moog_species':str})
 vald_stellar = readvald.read_valdshort('./vald//Vald_stellar_short')
 vald_stellar_long = readvald.read_valdlong('./vald/Vald_stellar_long')
+vald_long = readvald.read_valdlong('./vald/240122Valdlong_3600_7000_solar0.001_hfssolar.txt')
 class TestLinelist(unittest.TestCase):
     def test_linelist_moog(self):
         wvl0, flx0 = moog.synth(linelist=linelist,teff=4636,logg=1.418,vt=2.05, feh= - 2.60,A_6=5.220,A_56=-1.80,
@@ -54,6 +55,14 @@ def test_synth_CH(outfile,synth_code='moog'):
 #    def test_synth_CH(self):
 #        test_synth_CH('./output/moog_CH_HD122563.pdf',synth_code='moog')
 
+def test_longline(outfile,synth_code='moog'):
+    fig,ax = plt.subplots(1,1,figsize=(5,5))
+
+    synth_func = globals()[synth_code].synth #synth_func = moog.synth for example,
+
+    wvl0,flx0 = synth_func(linelist=vald_long,teff=4636,logg=1.418,vt=2.05, feh= - 2.60,A_6=5.220,A_56=-1.80,
+        run_id=f'test_{synth_code}_optical',workdir='./output')
+    flx_smoothed0 = utils.smooth_spectrum(wvl0,flx0,vfwhm=9.478)
 
 
 

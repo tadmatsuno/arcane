@@ -70,7 +70,7 @@ def test_voigt():
         np.array([0.1,0.15]),
         np.array([0.6,0.8]),
         axs[2])
-    fig.savefig('voigt_profiles.pdf')
+    fig.savefig('./output/voigt_profiles.pdf')
 
 
 def test_voigt_fit():
@@ -136,7 +136,7 @@ def test_voigt_fit():
 
 
 
-    fig.savefig('fit_voigt_profiles.pdf')
+    fig.savefig('./output/fit_voigt_profiles.pdf')
 
 
 def test_voigt_fit2():
@@ -165,7 +165,7 @@ def test_voigt_fit2():
         prof.fit(xbin[fit_mask],yy[fit_mask])
         return prof
     result = convert_to_pandas([test_pure_gaussian() for ii in range(100)])
-    result.to_csv('pure_gaussian_fitMC.csv')
+    result.to_csv('./output/pure_gaussian_fitMC.csv')
 
     def test_pure_gaussian():
         fvoigt = utils.voigts_multi_fwhm_fgfwhm(\
@@ -178,7 +178,7 @@ def test_voigt_fit2():
         prof.fit(xbin[fit_mask],yy[fit_mask])
         return prof
     result = convert_to_pandas([test_pure_gaussian() for ii in range(100)])
-    result.to_csv('pure_gaussian_fitMC.csv')
+    result.to_csv('./output/pure_gaussian_fitMC.csv')
 
 
     def test_pure_gaussian_v():
@@ -192,7 +192,7 @@ def test_voigt_fit2():
         prof.fit(xbin[fit_mask],yy[fit_mask])
         return prof
     result = convert_to_pandas([test_pure_gaussian_v() for ii in range(100)])
-    result.to_csv('pure_gaussian_vfitMC.csv')
+    result.to_csv('./output/pure_gaussian_vfitMC.csv')
 
     def test_voigt():
         fvoigt = utils.voigts_multi_fwhm_fgfwhm(\
@@ -205,7 +205,7 @@ def test_voigt_fit2():
         prof.fit(xbin[fit_mask],yy[fit_mask])
         return prof
     result = convert_to_pandas([test_voigt() for ii in range(100)])
-    result.to_csv('voigt_fitMC.csv')
+    result.to_csv('./output/voigt_fitMC.csv')
 
     def test_voigt_v():
         fvoigt = utils.voigts_multi_fwhm_fgfwhm(\
@@ -218,7 +218,7 @@ def test_voigt_fit2():
         prof.fit(xbin[fit_mask],yy[fit_mask])
         return prof
     result = convert_to_pandas([test_voigt_v() for ii in range(1000)])
-    result.to_csv('voigt_vfitMC.csv')
+    result.to_csv('./output/voigt_vfitMC.csv')
 
 
 if __name__ == '__main__':

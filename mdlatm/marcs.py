@@ -29,7 +29,8 @@ def get_filename1(geometry,teff,logg,mh,alpha=None):
   else:
     g1 = grid[(grid['geometry']==geometry)&(grid['teff']==teff)&(grid['logg']==logg)&\
       (grid['mh']==mh)&(grid['alphafe']==alpha)]
-  assert len(g1)==1,f'Cannot identify unique model {teff} {logg} {mh} {alpha}'
+  assert len(g1)<=1,f'Cannot identify unique model {teff} {logg} {mh} {alpha}'
+  assert len(g1)>=1,f'No model exist {teff} {logg} {mh} {alpha}'
   return data_dir+g1.iloc[0]['filename']
 
 

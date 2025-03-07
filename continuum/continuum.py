@@ -21,6 +21,9 @@ matplotlib.use('Qt5Agg')
 from ..utils import utils
 
 
+continuum_param = {'dwvl_knots':6,'niterate':10,'low_rej':3.,'high_rej':5.,
+  'grow':0.05,'naverage':1.,'samples':[]}
+
 class ContinuumFit:
   '''
   Class to store continuum function
@@ -101,11 +104,14 @@ class ContinuumFit:
       else:
         raise AttributeError('{0:.s} is not implemented'.format(self.func))
       outliers = utils.sigmaclip(\
-        self.wavelength,self.flux/y_cont,\
+        self.wavelength,self.flux-y_cont,\
         self.use_flag,np.ones(len(self.wavelength)),\
         self.grow,\
         self.low_rej,self.high_rej,
         std_from_central = True) ## Fitting might not be good at the edge
+      if (np.sum(outliers)/len(outliers))>0.5:
+        outliers = np.array([False]*len(self.wavelength))
+        break
     self.knotsx = spl[0]
     self.knotsy = splev(self.knotsx,spl)
     self.flx_continuum = y_cont
@@ -233,6 +239,13 @@ class PlotCanvas(FigureCanvas):
       self.txt.set_text('x={0:10.3f}    y={1:10.5f}'.format(x,y))
     self.draw()
 
+def getminmax(xx):
+  xmax = np.max(xx)
+  xmin = np.min(xx)
+  dx = xmax-xmin
+  return xmin-dx*0.05,xmax+dx*0.05
+
+
 class MainWindow(QWidget,Ui_Dialog):
   '''
   Class for main window
@@ -303,13 +316,8 @@ class MainWindow(QWidget,Ui_Dialog):
     self.wavelength = wavelength
     self.flux = flux
     self.CFit.continuum(self.wavelength,self.flux)
-    def getminmax(xx):
-      xmax = np.max(xx)
-      xmin = np.min(xx)
-      dx = xmax-xmin
-      return xmin-dx*0.05,xmax+dx*0.05
-    self.canvas.axes.set_xlim(getminmax(self.wavelength))
-    self.canvas.axes.set_ylim(getminmax(self.flux))
+    self.canvas.axes.set_xlim(getminmax(self.wavelength[self.CFit.use_flag]))
+    self.canvas.axes.set_ylim(getminmax(self.flux[self.CFit.use_flag]))
     self.draw_fig()
     if not output is None:
       self.output = output
@@ -478,6 +486,9 @@ class MainWindow(QWidget,Ui_Dialog):
       self.canvas.line_cont.set_ydata(self.CFit.flx_continuum)
       self.canvas.pt_knots.set_xdata(self.CFit.knotsx)
       self.canvas.pt_knots.set_ydata(self.CFit.knotsy)
+      self.canvas.axes.set_xlim(getminmax(self.wavelength[self.CFit.use_flag]))
+      self.canvas.axes.set_ylim(getminmax(self.flux[self.CFit.use_flag]))
+
     _ = self.show_selected_region(self.CFit.samples)
     self.canvas.draw()
 
@@ -657,7 +668,7 @@ class MainWindow(QWidget,Ui_Dialog):
       y1,y2 = y2,y1
     if x1[-1]>x2[0]: # Overlap
         j1 = np.nonzero(x1>x2[0])[0][0]-1
-        j2 = np.nonzero(x2<x1[-1])[0][-1]+1
+        j2 = np.minimum(np.nonzero(x2<x1[-1])[0][-1]+1,len(x2)-1)
         x_mid = np.linspace(x1[j1],x2[j2],
           int(np.maximum(len(x1)-j1,j2+1)))
         y_mid = [\
@@ -714,9 +725,9 @@ class MainWindow(QWidget,Ui_Dialog):
     print(f'The resut is saved as {output}')
     np.savetxt(self.output,\
       np.array([wvl1d,flx1d/blaze1d]).T,fmt='%12.6f')
-    np.savetxt(os.path.dirname(self.output)+'/blaze_'+os.path.basename(self.output),\
+    np.savetxt(os.path.join(os.path.dirname(self.output),'blaze_'+os.path.basename(self.output)),\
       np.array([wvl1d,blaze1d]).T,fmt='%12.6f')
-    np.savetxt(os.path.dirname(self.output)+'/1d_'+os.path.basename(self.output),\
+    np.savetxt(os.path.join(os.path.dirname(self.output),'1d_'+os.path.basename(self.output)),\
       np.array([wvl1d,flx1d]).T,fmt='%12.6f')
 
   def long1d_done(self,output):
@@ -748,6 +759,8 @@ class MainWindow(QWidget,Ui_Dialog):
       else:
         nn = (self.n_overlap[ii-1],-self.n_overlap[ii])
       ## For no overlapping region
+      print(n1+nn[0],n2+nn[1],nn[0],len(self.multi_wavelength[ii])+nn[1])
+      print(len(self.multi_blaze[ii]),len(blaze1d))
       blaze1d[n1+nn[0]:n2+nn[1]] = \
         self.multi_blaze[ii][nn[0]:len(self.multi_wavelength[ii])+nn[1]]
       if ii != 0:      ## For region overlapping with previous section
@@ -815,7 +828,7 @@ class MainWindow(QWidget,Ui_Dialog):
 
 
 
-def start_gui(wavelength,flux,outfile,form='1d',output_multi_head=None):
+def start_gui(wavelength,flux,outfile,form='1d',output_multi_head=None,**kwargs):
   '''
   This function starts the gui. 
 
@@ -850,7 +863,7 @@ def start_gui(wavelength,flux,outfile,form='1d',output_multi_head=None):
   '''
 
   app = QApplication(sys.argv)
-  window = MainWindow()
+  window = MainWindow(**kwargs)
   if form == 'long1d':
      window.input_long1d(\
        wavelength,flux,\

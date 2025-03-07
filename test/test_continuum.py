@@ -21,7 +21,7 @@ def test_continuum():
     ax.set_xlabel('Wavelength')
     ax.set_ylabel('flux')
     fig.tight_layout()
-    fig.savefig('continuum_test.pdf')
+    fig.savefig('./output/continuum_test.pdf')
 
     continuum2 = model.ContinuumSpline3(20.,low_rej=1.8,naverage=2)
     continuum2.fit(wvl,mock_flx)
@@ -36,7 +36,7 @@ def test_continuum():
     ax.set_xlabel('Wavelength')
     ax.set_ylabel('flux')
     fig.tight_layout()
-    fig.savefig('continuum_test_binning.pdf')
+    fig.savefig('./output/continuum_test_binning.pdf')
 
     continuum3 = model.ContinuumPolynomial(1,low_rej=3,naverage=2)
     continuum3.samples = [[6642.7,6643.3],[6643.9,6644.2]]
@@ -56,7 +56,7 @@ def test_continuum():
     ax.set_xlabel('Wavelength')
     ax.set_ylabel('flux')
     fig.tight_layout()
-    fig.savefig('continuum_test_poly_line.pdf')
+    fig.savefig('./output/continuum_test_poly_line.pdf')
 
 if __name__ == '__main__':
     test_continuum()
