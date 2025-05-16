@@ -347,7 +347,7 @@ def read_moog_mod(fname):
         
     
 
-def write_linelist(linelist,flinelist,isabfind=False,defalut_gamma_vw=3.,dwvl_margin=2.0,head1=True):
+def write_linelist(linelist,flinelist,isabfind=False,default_gamma_vw=3.,dwvl_margin=2.0,head1=True):
     if isinstance(linelist,(dict,pandas.DataFrame,Linelist)):
         if isinstance(linelist,Linelist) and hasattr(linelist,'scaled') and not linelist.scaled:
             print("Linelist is not scaled. Applying scaling according to the solar isotopic abundances")
@@ -389,7 +389,7 @@ def write_linelist(linelist,flinelist,isabfind=False,defalut_gamma_vw=3.,dwvl_ma
             if g_vw < 0.0:
                 gamma_vw[ii] = g_vw
             elif g_vw == 0.0:
-                gamma_vw[ii] = defalut_gamma_vw
+                gamma_vw[ii] = default_gamma_vw
             else:
                 sigma,alpha = int(g_vw),g_vw-int(g_vw)
                 try:
@@ -441,7 +441,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     feh_mod = None, alphafe_mod = None,
     mdlatm_io = 'marcs',
     vt = None, 
-    defalut_gamma_vw = 3.,
+    default_gamma_vw = 3.,
     species_vary = 0,
     dwvl_margin = 2.0,
     dwvl_step = 0.01,
@@ -523,7 +523,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         Overall scaling for the alpha abundances.
         Not implemented yet.
     
-    defalut_gamma_vw : float, optional
+    default_gamma_vw : float, optional
         Default Van der Waals damping constant for the lines.
         The default is 3.0, (the Unsold approximation will be multiplied by 3.0)
         If you use Vald, <0 will be used as valid inputs. For lines with gamma_vw = 0.0, the above default value will be used.
@@ -576,7 +576,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
 
     wmin_ll,wmax_ll = write_linelist(linelist,flinelist,
         isabfind=(mode in ['abfind']),
-        defalut_gamma_vw=defalut_gamma_vw,
+        default_gamma_vw=default_gamma_vw,
         dwvl_margin=dwvl_margin)
 #    print(wmin_ll,wmax_ll,wmin,wmax)
     if wmin is None:
@@ -586,7 +586,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
 #    print(wmin_ll,wmax_ll,wmin,wmax)
     if strong_lines is not None:
         write_linelist(strong_lines,fstrong_lines,
-            defalut_gamma_vw=defalut_gamma_vw,
+            default_gamma_vw=default_gamma_vw,
             dwvl_margin=dwvl_margin,           
             head1=False)
     else:
@@ -764,7 +764,7 @@ def synth(linelist, run_id = '', workdir = '.',
     teff = None, logg = None, feh = None, alphafe = None, 
     feh_mod = None, alphafe_mod = None,
     vt = None, 
-    defalut_gamma_vw = 3.,
+    default_gamma_vw = 3.,
     species_vary = 0,
     wmin = None, wmax = None,
     dwvl_margin = 2.0,
@@ -812,7 +812,7 @@ def synth(linelist, run_id = '', workdir = '.',
                         teff = teff, logg = logg, feh = feh, alphafe = alphafe,
                         feh_mod = feh_mod, alphafe_mod = alphafe_mod,
                         vt = vt,
-                        defalut_gamma_vw = defalut_gamma_vw,
+                        default_gamma_vw = default_gamma_vw,
                         species_vary = species_vary,
                         dwvl_margin = dwvl_margin,
                         dwvl_step = dwvl_step,
