@@ -49,6 +49,7 @@ def resample_model(model,lgtauRnew):
 def interp_model2(model1,model2,w2,alpha={},\
   interp_in_log=['Pe','Pg','Prad','Pturb','KappaRoss','Density','RHOX'],
   skip_keys = ['filename','modeltype','modelname','last_iteration','ndepth','lgTauR','geometry','comment','input_parameters']):
+
   '''
     model1 needs to be ''the inferior'' model 
     alpha is not alpha abundance!! 
@@ -73,6 +74,7 @@ def interp_model2(model1,model2,w2,alpha={},\
       is_resample = False
       model_new['lgTauR'] = tauR1
   if is_resample:
+    print('Resampling required')
     model_new['lgTauR'] = tauR1[(np.min(tauR2)<=tauR1)&(tauR1<=np.max(tauR2))]
     model2 = resample_model(model2,model_new['lgTauR'])
   model_new['ndepth'] = len(model_new['lgTauR'])
@@ -105,8 +107,6 @@ def interp_model2(model1,model2,w2,alpha={},\
       else:
         model_new[key] = (1.-ww)*model1[key] + ww*model2[key]
   return model_new
-
-
 
 def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_interp=False):
   '''
@@ -144,6 +144,7 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
     mh1, mh2, m_success = utils.get_grid_value(grid_value['mh'],mh,outside=outside)
   except ValueError:
     raise ValueError('mh out of range')
+
   grid_small = grid[((grid['teff']==teff1)|(grid['teff']==teff2))&\
     ((grid['logg']==logg1)|(grid['logg']==logg2))&\
     ((grid['mh']==mh1)|(grid['mh']==mh2))]
@@ -253,6 +254,7 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
     return models['000']
 
 get_model = get_marcs_mod        
+
 
 
 def write_marcs(filename, marcs_model):
@@ -528,3 +530,4 @@ class MARCS(ModelAtm):
     write_marcs(filename,self)
   def resample(self,lgtauRnew):
     return resample_model(self,lgtauRnew)
+

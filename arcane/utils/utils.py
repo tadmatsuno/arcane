@@ -10,7 +10,6 @@ c1 = 0.5346
 c2 = (1.0-c1)**2.
 g1 = 2.0*np.sqrt(2.0*np.log(2.0))
 
-
 def get_dx(x):
   '''
   This function computes the bin size from an array of x-values.

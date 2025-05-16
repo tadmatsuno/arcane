@@ -20,7 +20,6 @@ from .pyqtcontinuum import Ui_Dialog
 matplotlib.use('Qt5Agg')
 from ..utils import utils
 
-
 continuum_param = {'dwvl_knots':6,'niterate':10,'low_rej':3.,'high_rej':5.,
   'grow':0.05,'naverage':1.,'samples':[]}
 
@@ -244,7 +243,6 @@ def getminmax(xx):
   xmin = np.min(xx)
   dx = xmax-xmin
   return xmin-dx*0.05,xmax+dx*0.05
-
 
 class MainWindow(QWidget,Ui_Dialog):
   '''
@@ -488,7 +486,6 @@ class MainWindow(QWidget,Ui_Dialog):
       self.canvas.pt_knots.set_ydata(self.CFit.knotsy)
       self.canvas.axes.set_xlim(getminmax(self.wavelength[self.CFit.use_flag]))
       self.canvas.axes.set_ylim(getminmax(self.flux[self.CFit.use_flag]))
-
     _ = self.show_selected_region(self.CFit.samples)
     self.canvas.draw()
 
