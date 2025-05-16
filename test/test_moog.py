@@ -1,11 +1,11 @@
-from arcane_dev.synthesis import moog
-from arcane_dev.utils import utils
+from arcane.synthesis import moog
+from arcane.utils import utils
 import pandas
 import matplotlib.pyplot as plt
 import iofiles
 import numpy as np
 import unittest
-from arcane_dev.synthesis import readvald
+from arcane.synthesis import readvald
 
 
 hd122563 = iofiles.readspip('./DATA/HD122563plsp.op')

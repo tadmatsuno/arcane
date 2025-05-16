@@ -1,5 +1,5 @@
 import unittest
-from arcane_dev.utils import cross_corr
+from arcane.utils import cross_corr
 import numpy as np
 from astropy.constants import c
 ckm = c.to('km/s').value

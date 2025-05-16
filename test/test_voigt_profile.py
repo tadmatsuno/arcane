@@ -1,8 +1,9 @@
-from arcane_dev.utils import utils
-from arcane_dev.spectrum import model
+from arcane.utils import utils
+from arcane.spectrum import model
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas
+import tqdm
 
 eps = 1.0e-6
 def test_conversions(fwhm,fgfwhm):
@@ -164,7 +165,7 @@ def test_voigt_fit2():
         prof.fit_control['voigt'] = np.array([False])
         prof.fit(xbin[fit_mask],yy[fit_mask])
         return prof
-    result = convert_to_pandas([test_pure_gaussian() for ii in range(100)])
+    result = convert_to_pandas([test_pure_gaussian() for ii in tqdm.tqdm(range(100))])
     result.to_csv('./output/pure_gaussian_fitMC.csv')
 
     def test_pure_gaussian():
@@ -177,7 +178,7 @@ def test_voigt_fit2():
         prof.fit_control['voigt'] = np.array([False])
         prof.fit(xbin[fit_mask],yy[fit_mask])
         return prof
-    result = convert_to_pandas([test_pure_gaussian() for ii in range(100)])
+    result = convert_to_pandas([test_pure_gaussian() for ii in tqdm.tqdm(range(100))])
     result.to_csv('./output/pure_gaussian_fitMC.csv')
 
 
@@ -191,7 +192,7 @@ def test_voigt_fit2():
         prof.fit_control['voigt'] = np.array([True])
         prof.fit(xbin[fit_mask],yy[fit_mask])
         return prof
-    result = convert_to_pandas([test_pure_gaussian_v() for ii in range(100)])
+    result = convert_to_pandas([test_pure_gaussian_v() for ii in tqdm.tqdm(range(100))])
     result.to_csv('./output/pure_gaussian_vfitMC.csv')
 
     def test_voigt():
@@ -204,7 +205,7 @@ def test_voigt_fit2():
         prof.fit_control['voigt'] = np.array([False]*2)
         prof.fit(xbin[fit_mask],yy[fit_mask])
         return prof
-    result = convert_to_pandas([test_voigt() for ii in range(100)])
+    result = convert_to_pandas([test_voigt() for ii in tqdm.tqdm(range(100))])
     result.to_csv('./output/voigt_fitMC.csv')
 
     def test_voigt_v():
@@ -217,7 +218,7 @@ def test_voigt_fit2():
         prof.fit_control['voigt'] = np.array([True]*2)
         prof.fit(xbin[fit_mask],yy[fit_mask])
         return prof
-    result = convert_to_pandas([test_voigt_v() for ii in range(1000)])
+    result = convert_to_pandas([test_voigt_v() for ii in tqdm.tqdm(range(100))])
     result.to_csv('./output/voigt_vfitMC.csv')
 
 

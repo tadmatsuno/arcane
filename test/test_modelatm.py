@@ -1,4 +1,4 @@
-from arcane_dev.mdlatm import marcs,avg3d
+from arcane.mdlatm import marcs,avg3d
 import unittest
 import os
 

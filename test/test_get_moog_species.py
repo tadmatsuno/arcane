@@ -1,4 +1,4 @@
-from arcane_dev.synthesis import moog
+from arcane.synthesis import moog
 import unittest
 import os
 

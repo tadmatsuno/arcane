@@ -1,5 +1,5 @@
-from arcane_dev.spectrum import model
-from arcane_dev.synthesis import moog
+from arcane.spectrum import model
+from arcane.synthesis import moog
 import iofiles
 import matplotlib.pyplot as plt
 import pandas

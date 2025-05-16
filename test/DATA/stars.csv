@@ -1,0 +1,3 @@
+name,teff,logg,vt,feh,A_6,A_7,spec
+sun,5777,4.438,1.00,0.00,8.43,7.83,DATA/sun.text
+arcturus,4286,1.66,1.00,-0.52,8.00,7.50,DATA/arcturus.text

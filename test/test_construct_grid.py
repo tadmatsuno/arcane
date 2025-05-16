@@ -1,5 +1,5 @@
-from arcane_dev.synthesis import moog
-from arcane_dev.spectrum import model
+from arcane.synthesis import moog
+from arcane.spectrum import model
 import unittest
 import os
 import pandas
@@ -8,7 +8,7 @@ import matplotlib.cm as cm
 import numpy as np
 from matplotlib.colors import Normalize
 from matplotlib.colorbar import ColorbarBase
-from arcane_dev.synthesis import readvald
+from arcane.synthesis import readvald
 
 cmap = cm.get_cmap('viridis')
 

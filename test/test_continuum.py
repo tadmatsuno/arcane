@@ -1,11 +1,11 @@
-from arcane_dev.spectrum import model
+from arcane.spectrum import model
 import iofiles
 import numpy as np
 import matplotlib.pyplot as plt
 
 def test_continuum():
     continuum = model.ContinuumSpline3(20.,low_rej=1.8)
-    arcturus = iofiles.readspip('./arcturus.text')
+    arcturus = iofiles.readspip('./DATA/arcturus.text')
     mask = (5000<arcturus['wvl'])&(arcturus['wvl']<5100)
     wvl = arcturus['wvl'][mask].values
     flx = arcturus['flx'][mask].values
