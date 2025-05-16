@@ -5,12 +5,12 @@ import os
 class TestVald(unittest.TestCase):
     def test_readvald_stellar_short(self):
         print("test 1")
-        linelist = readvald.read_valdshort('vald/Vald_stellar_short')
+        linelist = readvald.read_vald('vald/Vald_stellar_short')
         self.assertEqual(len(linelist),54)
 
     def test_readvald_stellar_short_hfs(self):
         print("test 2")
-        linelist = readvald.read_valdshort('vald/Vald_stellar_short_hfs')
+        linelist = readvald.read_vald('vald/Vald_stellar_short_hfs')
         self.assertEqual(len(linelist),162)
 
     def test_readvald_stellar_long(self):

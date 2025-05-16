@@ -178,7 +178,7 @@ def get_iso_atom_num(sp1):
     elif stats == 2:
         ion = idx - idx_start + 1 # [1, 2, 3]  for ["", +, ++]
     else:
-        raise AssertionError("An unexpected end state")
+        raise IOError("An unexpected end state", sp1, stats)
     zz = [elemtopnum(atom) for atom in atoms]
     return atoms, zz, isos, ion
 
@@ -295,6 +295,8 @@ def readvald(filename):
         if match:
             istart = match.start()
             iend = ref.find(" ",istart)
+            if iend == -1:
+                iend = len(ref)
             isotope_species.append(ref[istart:iend])
         else:
             isotope_species.append("")
