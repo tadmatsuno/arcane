@@ -2,6 +2,7 @@ import numpy as np
 import pandas
 from arcane.utils import utils
 from scipy.interpolate import CubicSpline
+from arcane.mdlatm.base import ModelAtm
 
 data_dir = '/mnt/d/model_atm/MARCS/' ## CHANGE THIS 
 with open(data_dir+'MARCS_avai.dat') as fout:
@@ -17,7 +18,6 @@ with open(data_dir+'MARCS_avai.dat') as fout:
   
 grid = pandas.read_csv(data_dir+'MARCS_grid.csv',index_col=None)
 
-
 def get_filename1(geometry,teff,logg,mh,alpha=None):
   assert geometry in ['p','s'], 'Geometry has to be either p or s.'
   if alpha is None:
@@ -29,7 +29,8 @@ def get_filename1(geometry,teff,logg,mh,alpha=None):
   else:
     g1 = grid[(grid['geometry']==geometry)&(grid['teff']==teff)&(grid['logg']==logg)&\
       (grid['mh']==mh)&(grid['alphafe']==alpha)]
-  assert len(g1)==1,f'Cannot identify unique model {teff} {logg} {mh} {alpha}'
+  assert len(g1)<=1,f'Cannot identify unique model {teff} {logg} {mh} {alpha}'
+  assert len(g1)>=1,f'No model exist {teff} {logg} {mh} {alpha}'
   return data_dir+g1.iloc[0]['filename']
 
 
@@ -46,7 +47,9 @@ def resample_model(model,lgtauRnew):
 
 
 def interp_model2(model1,model2,w2,alpha={},\
-  interp_in_log=['Pe','Pg','Prad','Pturb','KappaRoss','Density','RHOX']):
+  interp_in_log=['Pe','Pg','Prad','Pturb','KappaRoss','Density','RHOX'],
+  skip_keys = ['filename','modeltype','modelname','last_iteration','ndepth','lgTauR','geometry','comment','input_parameters']):
+
   '''
     model1 needs to be ''the inferior'' model 
     alpha is not alpha abundance!! 
@@ -55,7 +58,7 @@ def interp_model2(model1,model2,w2,alpha={},\
     'Interpolation error, model geometry mismatch'
   assert model1['modeltype']==model2['modeltype'],\
     'Interpolation error, modeltype mismatch'
-  model_new = {}
+  model_new = MARCS()
   model_new['comment'] = ''
   model_new['comment'] += model1['comment']
   model_new['comment'] += model2['comment']
@@ -88,7 +91,7 @@ def interp_model2(model1,model2,w2,alpha={},\
   model_new['last_iteration'] = 'interp'
   for key in model1.keys():
     ww = get_weight(key)
-    if key in ['filename','modeltype','modelname','last_iteration','ndepth','lgTauR','geometry','comment']:
+    if key in skip_keys:
       continue
     elif key == 'logg':
       model_new['logg'] = (1.-ww)*model1['logg'] + ww*model2['logg']
@@ -104,9 +107,6 @@ def interp_model2(model1,model2,w2,alpha={},\
       else:
         model_new[key] = (1.-ww)*model1[key] + ww*model2[key]
   return model_new
-
-        
-
 
 def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_interp=False):
   '''
@@ -135,15 +135,16 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
   try:
     teff1, teff2, t_success = utils.get_grid_value(grid_value['teff'],teff,outside=outside)
   except ValueError:
-    ValueError('teff out of range')
+    raise ValueError('teff out of range')
   try:
     logg1, logg2, g_success = utils.get_grid_value(grid_value['logg'],logg,outside=outside)
   except ValueError:
-    ValueError('logg out of range')
+    raise ValueError('logg out of range')
   try:
     mh1, mh2, m_success = utils.get_grid_value(grid_value['mh'],mh,outside=outside)
   except ValueError:
-    ValueError('mh out of range')
+    raise ValueError('mh out of range')
+
   grid_small = grid[((grid['teff']==teff1)|(grid['teff']==teff2))&\
     ((grid['logg']==logg1)|(grid['logg']==logg2))&\
     ((grid['mh']==mh1)|(grid['mh']==mh2))]
@@ -252,6 +253,7 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
   else:
     return models['000']
 
+get_model = get_marcs_mod        
 
 
 
@@ -384,7 +386,7 @@ def read_marcs(filename):
   '''
   assert filename.endswith('.mod'),\
     'This function is to read .mod files from MARCS'
-  marcs_model = {}
+  marcs_model = MARCS()
   marcs_model['filename'] = filename
   marcs_model['modeltype'] = 'marcs'
   marcs_model['comment'] = ''
@@ -515,3 +517,17 @@ def read_marcs(filename):
     read_structure() #  k    N2     O2     NO     NH     TiO   C2H2    HCN    C2H    HS     SiH    C3H
     read_structure() #  k    C3     CS     SiC   SiC2    NS     SiN    SiO    SO     S2     SiS   Other
     return marcs_model
+
+read_model = read_marcs
+
+class MARCS(ModelAtm):
+  '''
+  Class for MARCS model atmospheres
+  '''
+  def __init__(self, *args, **kwargs):
+    super(MARCS, self).__init__(*args, **kwargs)
+  def write(self,filename):
+    write_marcs(filename,self)
+  def resample(self,lgtauRnew):
+    return resample_model(self,lgtauRnew)
+

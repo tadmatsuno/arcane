@@ -16,7 +16,7 @@ from scipy.special import voigt_profile
 from scipy.stats import linregress
 from scipy.optimize import minimize,LinearConstraint
 from .pyqtlinesfit import Ui_Dialog
-from arcane.utils import utils
+from pycont import myspec_utils as utils
 import os 
 import iofiles
 from ..utils import utils
@@ -31,7 +31,6 @@ with open(os.path.join(__file__[:__file__.rfind('/')],'pnum_symbol.csv'),'r') as
   for line in f.readlines():
     pnum,symb = line.strip().split(',')
     ptable[int(pnum)] = symb
-
 
 
 class LoadResults:
