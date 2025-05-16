@@ -6,6 +6,7 @@ import iofiles
 import numpy as np
 import unittest
 from arcane.synthesis import readvald
+from arcane.mdlatm import marcs
 
 
 hd122563 = iofiles.readspip('./DATA/HD122563plsp.op')
@@ -26,6 +27,20 @@ class TestLinelist(unittest.TestCase):
             run_id='test_moog2_vald_long',workdir='./output')
         self.assertTrue(np.allclose(wvl1,wvl2,atol=1.0e-4))
         self.assertTrue(np.allclose(flx1,flx2,atol=1.0e-4))
+    def test_model_various_input(self):
+        wvl0, flx0 = moog.synth(linelist=linelist,teff=4636,logg=1.418,vt=2.05, feh= - 2.60,A_6=5.220,A_56=-1.80,
+            run_id='base',workdir='./output')
+        
+        marcs_mod = marcs.get_marcs_mod(teff=4636,logg=1.418,mh=-2.60)
+        marcs.write_marcs("./output/marcsHD122563.mod",marcs_mod)
+        wvl1, flx1 = moog.synth(linelist=linelist,marcs_mod_file="./output/marcsHD122563.mod",A_6=5.220,A_56=-1.80,
+            run_id="marcsmod",workdir="./output",feh=-2.60,vt=2.05)
+        self.assertTrue(np.allclose(wvl0,wvl1,atol=1.0e-4))
+        
+        wvl2, flx2 = moog.synth(linelist=linelist, moog_mod_file="./output/model_base.in",A_6=5.220,A_56=-1.80,
+            run_id="moogmod",workdir="./output")
+        self.assertTrue(np.allclose(wvl0,wvl2,atol=1.0e-4))
+
 
 def test_synth_CH(outfile,synth_code='moog'):
     fig,ax = plt.subplots(1,1,figsize=(5,5))

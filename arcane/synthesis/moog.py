@@ -304,6 +304,48 @@ def check_line_density(wvls, dwvl_margin):
             return True
     return False
 
+def read_moog_mod(fname):
+    '''
+    Currently doesn't return any information about the molecules included.
+    '''
+    model_out = {}
+    with open(fname,'r') as f:
+        f.readline()
+        model_out["model_name"] = f.readline()[-1]
+        model_out["Nlayer"] = int(f.readline()[10:-1])
+        lgtauR = []
+        T = []
+        Pg = []
+        Pe = []
+        Mu = []
+        KappaRoss = []
+        for ii in range(model_out["Nlayer"]):
+            line = f.readline()
+            lgtauR1,T1,Pg1,Pe1,Mu1,KappaRoss1 = line.split()
+            lgtauR.append(float(lgtauR1))
+            T.append(float(T1))
+            Pg.append(float(Pg1))
+            Pe.append(float(Pe1))
+            Mu.append(float(Mu1))
+            KappaRoss.append(float(KappaRoss1))
+        model_out["lgTauR"] = np.array(lgtauR)
+        model_out["T"] = np.array(T)
+        model_out["Pg"] = np.array(Pg)
+        model_out["Pe"] = np.array(Pe)
+        model_out["Mu"] = np.array(Mu)
+        model_out["KappaRoss"] = np.array(KappaRoss)
+        vt = float(f.readline()[0:6])
+        model_out["vt"] = vt
+        line = f.readline()
+        natom = int(line.split()[1])
+        m_h = float(line.split()[2])
+        model_out["m_h"] = m_h
+    return model_out    
+    
+        
+        
+        
+    
 
 def write_linelist(linelist,flinelist,isabfind=False,defalut_gamma_vw=3.,dwvl_margin=2.0,head1=True):
     if isinstance(linelist,(dict,pandas.DataFrame,Linelist)):
@@ -394,7 +436,7 @@ def write_linelist(linelist,flinelist,isabfind=False,defalut_gamma_vw=3.,dwvl_ma
 
 
 def run_moog(mode, linelist, run_id = '', workdir = '.',
-    moog_mod_file = None, mod_file = None, 
+    moog_mod_file = None, marcs_mod_file = None, 
     teff = None, logg = None, feh = None, alphafe = None, 
     feh_mod = None, alphafe_mod = None,
     mdlatm_io = 'marcs',
@@ -452,7 +494,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     moog_mod_file : str, optional
         The filename of the model atmosphere in MOOG format.
     
-    mod_file : str, optional
+    marcs_mod_file : str, optional
         The filename of the model atmosphere.
     
     teff : float, optional
@@ -553,20 +595,21 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     if not moog_mod_file is None:
         assert os.path.exists(moog_mod_file), 'moog_mod_file specified does not exist'
         if any([not val is None for val in \
-            [mod_file, teff, logg, feh_mod, alphafe_mod, vt]]):
+            [marcs_mod_file, teff, logg, feh_mod, alphafe_mod, vt, feh]]):
             warnings.warn('moog_mod_file is provided. '+\
                 'marc_mod_file, teff, logg, feh_mod, alphafe_mod, vt will be ignored')
         shutil.copy(moog_mod_file,fmodelin)
-        assert not vt is None,'vt is needed'
-        assert not feh is None,'feh is needed'
-    elif not mod_file is None:
+        moog_model = read_moog_mod(fmodelin)
+        feh = moog_model['m_h']
+#        feh = 
+    elif not marcs_mod_file is None:
         if not all((teff is None, logg is None,feh_mod is None, alphafe_mod is None )):
             warnings.warn(
                 'model file is directly provided. '+\
-                'Teff, logg, [Fe/H]_mod, and [alpha/Fe]_mod will be ignored')
-        assert os.path.exists(mod_file),'mod_file specified does not exist'
+                'Teff, logg, feh_mod, and alphafe_mod will be ignored')
+        assert os.path.exists(marcs_mod_file),'mod_file specified does not exist'
         assert not vt is None,'vt is needed'
-        model = mdlatm.read_model(mod_file)
+        model = mdlatm.read_model(marcs_mod_file)
         write_marcs2moog_model(fmodelin,model,vt, feh_overwrite = feh)
         if feh is None:
            feh = model['m_h']
