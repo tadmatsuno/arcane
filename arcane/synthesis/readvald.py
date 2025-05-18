@@ -96,9 +96,9 @@ def convert_sigma_alpha_to_gamma(elem_num, sigma, alpha,t0=1.0e4*u.K):
 def get_atom_num(sp1):
     """
     This function does somehting like the following
-    Ba 2 -> ['Ba'] [56] 1
-    C2 1 -> ["C","C"] [6,6] 0
-    CH -> ["C","H"] [6,1] 0
+    Ba 2 -> ['Ba'] [56] 2
+    C2 1 -> ["C","C"] [6,6] 1
+    CH -> ["C","H"] [6,1] 1
     """
     atom_mol = sp1.split()[0]
     if len(sp1.split()) == 1:
@@ -121,7 +121,7 @@ def get_atom_num(sp1):
         atoms.append(atom_mol[start_idx:])
 
     zz = [elemtopnum(atom) for atom in atoms]
- 
+
     return atoms, zz, ion
 
 

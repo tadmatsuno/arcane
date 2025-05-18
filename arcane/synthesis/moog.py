@@ -340,12 +340,7 @@ def read_moog_mod(fname):
         natom = int(line.split()[1])
         m_h = float(line.split()[2])
         model_out["m_h"] = m_h
-    return model_out    
-    
-        
-        
-        
-    
+    return model_out        
 
 def write_linelist(linelist,flinelist,isabfind=False,default_gamma_vw=3.,dwvl_margin=2.0,head1=True):
     if isinstance(linelist,(dict,pandas.DataFrame,Linelist)):
@@ -434,21 +429,20 @@ def write_linelist(linelist,flinelist,isabfind=False,default_gamma_vw=3.,dwvl_ma
         wmin,wmax = np.min(ww),np.max(ww)
     return wmin,wmax
 
-
 def run_moog(mode, linelist, run_id = '', workdir = '.',
     moog_mod_file = None, marcs_mod_file = None, 
     teff = None, logg = None, feh = None, alphafe = None, 
     feh_mod = None, alphafe_mod = None,
     mdlatm_io = 'marcs',
     vt = None, 
+    wmin = None, wmax= None,
     default_gamma_vw = 3.,
     species_vary = 0,
     dwvl_margin = 2.0,
     dwvl_step = 0.01,
     cog_ew_minmax = [-7,-4],
-    part_of_parallel = False,
+    part_of_parallel = False,# I think this should be handled outside this function.
     strong_lines = None,
-    wmin = None, wmax= None,
     **kw_args):
     '''
     Run MOOG with a given linelist and model atmosphere.
@@ -479,7 +473,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     linelist : Linelist class, str or dict or pandas.DataFrame
         If it is a string, it is the filename of the linelist in MOOG format.
         If it is a dict or pandas.DataFrame, it is the linelist, which should have the following keys:
-        'wvl', one of ('species', 'moog_species'), 'loggf', 'expot'
+        'wavelength', one of ('species', 'moog_species'), 'loggf', 'expot'
         It is strongly recommended to pass moog_species as str, not float.
         optional keys: 'ew', 'gamma_vw', 'd0'
         Note that the MOOG currently does not allow one to change damping parameters for Stark and radiation damping.
@@ -766,6 +760,7 @@ def synth(linelist, run_id = '', workdir = '.',
     vt = None, 
     default_gamma_vw = 3.,
     species_vary = 0,
+    
     wmin = None, wmax = None,
     dwvl_margin = 2.0,
     dwvl_step = 0.01,
