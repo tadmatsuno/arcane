@@ -11,7 +11,7 @@ import warnings
 # Everything in readvald should eventually be moved to this file for better organization.
 # This is a temporary solution
 # MOOG species id function should also utilize the functions currently in readvald 
-from readvald import * 
+from .readvald import * 
 
 def get_atom_num(species_id):
     """
