@@ -12,6 +12,13 @@ setup(
     description='a prototype of my arcane package',
     packages=find_packages(),  # Automatically discover packages and subpackages
     install_requires=[
-        # List your package dependencies here, e.g., 'requests>=2.0'
+        'numpy',
+        'scipy',
+        'matplotlib',
+        'PyQt5',
+        'pandas',
+        'shapely',
+        'astropy',
+        'tqdm',
     ],
 )
