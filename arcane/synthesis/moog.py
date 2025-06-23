@@ -401,10 +401,14 @@ def write_linelist(linelist,flinelist,isabfind=False,default_gamma_vw=3.,dwvl_ma
         with open(flinelist, 'w') as f:
             if head1:
                 f.write('Linelist createad by arcane\n')
-            #TODO:Support for HFS?   
+            #TODO:Support for HFS blends driver?   
             for ii in range(nline):
                 if linelist['expot'][ii] >= 50:
                     warnings.warn('lines with expot>50 ev will be skipped')
+                    continue
+                moog_species = linelist['moog_species'][ii]
+                if "." in moog_species and int(moog_species[moog_species.find('.')+1])>1:
+                    warnings.warn("MOOG does not support ionization stage > 1, thus this line will be skipped")
                     continue
                 f.write("{0:10.3f}{1:>10s}{2:10.3f}{3:10.3f}{4:10.3f}{5:10.3f}{6:10.3f}\n".\
                     format(linelist['wavelength'][ii],
