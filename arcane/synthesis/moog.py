@@ -423,7 +423,7 @@ def write_linelist(linelist,flinelist,isabfind=False,default_gamma_vw=3.,dwvl_ma
             raise ValueError('The line density is too high, and MOOG will like to go into an infinite loop. '+\
                              'Please reduce the line density or decrease dwvl_margin')
         wmin,wmax = np.min(linelist['wavelength']),np.max(linelist['wavelength'])
-    else:
+    elif isinstance(linelist,str):
         shutil.copy(linelist, flinelist)
         with open(flinelist,'r') as f:
             ww = [float(line.split()[0]) for line in f.readlines()[1:]]
@@ -431,6 +431,8 @@ def write_linelist(linelist,flinelist,isabfind=False,default_gamma_vw=3.,dwvl_ma
             raise ValueError('The line density is too high, and MOOG will like to go into an infinite loop. '+\
                              'Please reduce the line density or decrease dwvl_margin')
         wmin,wmax = np.min(ww),np.max(ww)
+    else: 
+        raise TypeError('linelist should be a dict, pandas.DataFrame, Linelist class or a filename')
     return wmin,wmax
 
 def run_moog(mode, linelist, run_id = '', workdir = '.',
