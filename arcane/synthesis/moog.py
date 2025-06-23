@@ -381,7 +381,7 @@ def write_linelist(linelist,flinelist,isabfind=False,default_gamma_vw=3.,dwvl_ma
         gamma_vw = np.zeros(nline)
         for ii in range(nline):
             g_vw = linelist['gamma_vw'][ii]
-            if g_vw < 0.0:
+            if (g_vw < 0.0) or ((0 < g_vw) and (g_vw < 10)):
                 gamma_vw[ii] = g_vw
             elif g_vw == 0.0:
                 gamma_vw[ii] = default_gamma_vw
