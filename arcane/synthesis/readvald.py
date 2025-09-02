@@ -311,11 +311,12 @@ def readvald(filename):
             linelist.loc[isotope_species==sp1,f"A{ii+1}"] = zzaa[1]
         linelist.loc[isotope_species==sp1,"ion"] = out1[3]
     
+    mask_noiso = (linelist["Z1"]==0)
     for sp1 in np.unique(linelist["species"].values):
         out1 = get_atom_num(sp1)
-        linelist.loc[(linelist["species"]==sp1)&(linelist["Z1"]==0),"ion"] = out1[2]    
+        linelist.loc[(linelist["species"]==sp1) & mask_noiso,"ion"] = out1[2]    
         for ii,zz in enumerate(out1[1]):
-            linelist.loc[(linelist["species"]==sp1)&(linelist["Z1"]==0),f"Z{ii+1}"] = zz
+            linelist.loc[(linelist["species"]==sp1)&mask_noiso,f"Z{ii+1}"] = zz
     return linelist
 
 def read_valdshort(filename):# for backwards compatibility

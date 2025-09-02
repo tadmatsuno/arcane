@@ -11,6 +11,7 @@ from arcane.mdlatm import marcs,avg3d
 import tempfile
 from arcane.synthesis.readvald import convert_sigma_alpha_to_gamma,Linelist
 import json
+import time
 
 ## Detail see Params.f
 moog_default_input = {
@@ -106,7 +107,7 @@ def get_moog_species_id(species):
             # If c is an uppercase, it should correspond to the beginning of a new element
             # e will always be a lowercase, it should be read at the end
             for ii,s in enumerate(species):
-                if s.isupper() &(ii>i0):
+                if s.isupper() and (ii>i0):
                     atomnums.append(get_atomnum(species[i0:ii]))
                     i0 = ii
             atomnums.append(get_atomnum(species[i0:]))
@@ -310,30 +311,26 @@ def read_moog_mod(fname):
     '''
     model_out = {}
     with open(fname,'r') as f:
-        f.readline()
+        model_format = f.readline()
         model_out["model_name"] = f.readline()[-1]
         model_out["Nlayer"] = int(f.readline()[10:-1])
-        lgtauR = []
-        T = []
-        Pg = []
-        Pe = []
-        Mu = []
-        KappaRoss = []
+        if model_format.startswith("BEGN"):
+            input_variables = ["lgTauR", "T", "Pg", "Pe", "Mu", "KappaRoss"]
+        elif model_format.startswith("KURUCZ"):
+            input_variables = ["rhox", "T", "Pg", "Pe", "KappaRoss"]
+        elif model_format.startswith("NEWMARCS"):
+            input_variables = ["lgTauR", "T", "Pe", "Pg", "rho", "vturb", "KappaRoss"]
+        else:
+            raise ValueError(f"Unknown model format: {model_format}")
+        for var in input_variables:
+            model_out[var] = []
         for ii in range(model_out["Nlayer"]):
             line = f.readline()
-            lgtauR1,T1,Pg1,Pe1,Mu1,KappaRoss1 = line.split()
-            lgtauR.append(float(lgtauR1))
-            T.append(float(T1))
-            Pg.append(float(Pg1))
-            Pe.append(float(Pe1))
-            Mu.append(float(Mu1))
-            KappaRoss.append(float(KappaRoss1))
-        model_out["lgTauR"] = np.array(lgtauR)
-        model_out["T"] = np.array(T)
-        model_out["Pg"] = np.array(Pg)
-        model_out["Pe"] = np.array(Pe)
-        model_out["Mu"] = np.array(Mu)
-        model_out["KappaRoss"] = np.array(KappaRoss)
+            xx = line.split()[:len(input_variables)]
+            for x,var in zip(xx, input_variables):
+                model_out[var].append(float(x))
+        for var in input_variables:
+            model_out[var] = np.array(model_out[var])
         vt = float(f.readline()[0:6])
         model_out["vt"] = vt
         line = f.readline()
@@ -597,7 +594,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         if any([not val is None for val in \
             [marcs_mod_file, teff, logg, feh_mod, alphafe_mod, vt, feh]]):
             warnings.warn('moog_mod_file is provided. '+\
-                'marc_mod_file, teff, logg, feh_mod, alphafe_mod, vt will be ignored')
+                'marc_mod_file, teff, logg, feh_mod, alphafe_mod, vt, feh will be ignored')
         shutil.copy(moog_mod_file,fmodelin)
         moog_model = read_moog_mod(fmodelin)
         feh = moog_model['m_h']
@@ -766,7 +763,6 @@ def synth(linelist, run_id = '', workdir = '.',
     vt = None, 
     default_gamma_vw = 3.,
     species_vary = 0,
-    
     wmin = None, wmax = None,
     dwvl_margin = 2.0,
     dwvl_step = 0.01,
@@ -788,6 +784,11 @@ def synth(linelist, run_id = '', workdir = '.',
 
     See also moog.run_moog for other parameters    
     '''
+    t0 = time.time()
+    tint = np.base_repr(int(t0),36)
+    t2 = int((t0 - int(t0))*1e2)
+    run_id += f"{tint:s}{t2:02d}"
+
     if isinstance(linelist,(dict,pandas.DataFrame)): 
         # Create linelist if it is not a filename        
         if type(linelist) is pandas.DataFrame: 

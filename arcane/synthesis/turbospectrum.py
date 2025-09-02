@@ -10,24 +10,43 @@ from arcane.utils import utils
 from arcane.mdlatm import marcs,avg3d
 import pandas
 import json
+import time
 
-ts_default_input = {
-    'INTENSITY/FLUX':'Flux',
-    'R-PROCESS':0.0,
-    'S-PROCESS':0.0,
-    'ALPHA/Fe' :0.0,
-    'HELIUM' : 0.0,
-    'ABFIND' : True,
-    'PURE-LTE': False,
-    "LAMBDA_STEP": 0.01
+ts_default_input = {# Combination of the input name for the python interface, that for turbospectrum input, and the default value
+    "INTENSITY_FLUX":('INTENSITY/FLUX','Flux'),
+    "RPROCESS":('R-PROCESS',0.0),
+    "SPROCESS":('S-PROCESS',0.0),
+#    "alphafe":('ALPHA/Fe' ,0.0),
+    "HELIUM": ('HELIUM', 0.0),
+    "ABFIND": ('ABFIND', True),
+    'PURE_LTE': ("PURE-LTE", False),
+#    "dwvl_step": ("LAMBDA_STEP", 0.01),
 }
 
-ts_nocheck_input = ["ABUND_SOURCE","NLTE","NLTEINFOFILE","MODELATOMFILE",
-    "DEPARTUREFILE","DEPARTBINARY","SEGMENTSFILE","RESOLUTION",
-    "TSUJI","LOGFILE","ATOMDATA","MODELOPAC","PARAMETER","SPECDATA",
-    "MOLECULES","LIMBDARK","MULTIDUMP","CONTINUOUS-OPACITIES",
-    "C_WAVELENGTHS","DYDRODYN_DEPTH","COS(THETA)","SCATTFRAC",
-    ]# These are recognized as input but not will be checked
+# These are recognized as input but not will be checked
+ts_nocheck_input = {"ABUND_SOURCE":"ABUND_SOURCE",
+                    "NLTE":"NLTE",
+                    "NLTEINFOFILE":"NLTEINFOFILE",
+                    "MODELATOMFILE":"MODELATOMFILE",
+                    "DEPARTUREFILE":"DEPARTUREFILE",
+                    "DEPARTBINARY":"DEPARTBINARY",
+                    "SEGMENTSFILE":"SEGMENTSFILE",
+                    "RESOLUTION":"RESOLUTION",
+                    "TSUJI": "TSUJI",
+                    "LOGFILE": "LOGFILE",
+                    "ATOMDATA": "ATOMDATA",
+                    "PARAMETER": "PARAMETER",
+                    "SPECDATA": "SPECDATA",
+                    "MOLECULES": "MOLECULES",
+                    "LIMBDARK": "LIMBDARK",
+                    "MULTIDUMP": "MULTIDUMP",
+                    "CONTINUOUS_OPACITIES": "CONTINUOUS-OPACITIES",
+                    "C_WAVELENGTHS": "C-WAVELENGTHS",
+                    "DYDRODYN_DEPTH": "DYDRODYN_DEPTH",
+                    "COS_THETA": "COS(THETA)",
+                    "SCATTFRAC": "SCATTFRAC"}
+                   
+
 
 ts_path = ""
 home_path = os.path.expanduser("~")
@@ -407,6 +426,7 @@ def run_turbospectrum(mode,
     vt = None,
     default_dampnum = 3.,
     wmin = None, wmax = None,
+    dwvl_step = 0.01,
     spherical = None,
     **kw_args):
     '''
@@ -421,74 +441,69 @@ def run_turbospectrum(mode,
     '''
     mdlatm = globals()[mdlatm_io]
     cwd = os.getcwd()
+    
+    if wmin is None:
+        raise ValueError('wmin is not specified')
+    if wmax is None:
+        raise ValueError('wmax is not specified')
+    
+    # Mode dependent input checks
+    if mode == 'babsma':
+        if vt is None:
+            raise ValueError('vt is not specified for babsma mode')
+        if linelist is not None:
+            warnings.warn("linelist is ignored in babsma mode.")
+    elif mode == 'syn':
+        if spherical is None:
+            raise ValueError('spherical is not specified for syn mode')
+        if linelist is None:
+            raise ValueError('linelist is needed for modes other than babsma')
+        if feh is None:
+            raise ValueError('feh is needed for syn mode')
+        
+        if ts_opac_file is None:
+            raise ValueError('ts_opac_file is needed for syn mode')
+        if vt is not None:
+            warnings.warn("vt is isgnored in syn mode.")    
+        if feh_mod is not None:
+            warnings.warn("feh_mod is ignored in syn mode")
+        if alphafe_mod is not None:
+            warnings.warn("alphafe_mod is ignored in syn mode")
+            
+        if isinstance(linelist, list) and isinstance(linelist[0], str):
+            flinelist = [os.path.abspath(ll) for ll in linelist]
+        elif isinstance(linelist, str):
+            flinelist = os.path.abspath(linelist)
+        else:
+            raise ValueError("linelist has to be the path to a linelist file or a list of such paths")
+    else:
+        raise ValueError('mode should be babsma or syn')
+    
     if not os.path.exists(workdir):
         os.makedirs(workdir)
-   
     
-    if mode not in ['babsma','syn']:
-        raise ValueError('mode should be babsma or syn')
-   
-    if isinstance(linelist,str):
-        flinelist = linelist
-    else:
-        flinelist = f'{workdir}/linelist_{run_id}.lin'
-
+    # Just setting default filenames for .mod and .opac files
     if marcs_mod_file is None:
         fmodelin = os.path.join(workdir, f"marcs_{run_id}.mod")
     else:
         fmodelin = marcs_mod_file
-
     if ts_opac_file is None:
         ts_opac_file = os.path.join(workdir, f"ts_{run_id}.opac")
-    elif vt is not None:
-        warnings.warn("vt is specified, but ts_opac_file is given. vt will be ignored.")
-
-    fresult = os.path.join(cwd,workdir, f"ts_{run_id}.out")
-    fparam = os.path.join(cwd,workdir, f"ts_{run_id}.param")
+        
+    fresult = os.path.join(workdir, f"ts_{run_id}.out")
+    
+        
     
     # Make everything to abs path
-    flinelist = os.path.join(cwd, flinelist)
-    fmodelin = os.path.join(cwd,fmodelin)
-    ts_opac_file = os.path.join(cwd,ts_opac_file)
-    fresult = os.path.join(cwd,fresult)
-    fparam = os.path.join(cwd,fparam)
-    flog = os.path.join(cwd, workdir, f"ts_{run_id}.log")
-    
-    if (mode != 'babsma'):
-        # checking linelist and running babsma will be done if it is not available
-        if linelist is None:
-            raise ValueError('linelist is needed for modes other than babsma')
-        elif isinstance(linelist,str):
-            if not os.path.exists(linelist):
-                raise ValueError(f'linelist file {linelist} does not exist')
-            # If wmin or wmax is not specified, we have to get them from the linelist
-            if wmin is None or wmax is None:
-                linelist = read_linelist(flinelist)
-                if wmin is None:
-                    wmin = linelist['wavelength'].min()
-                if wmax is None:
-                    wmax = linelist['wavelength'].max()
-        else:
-            wmin_ll, wmax_ll = write_linelist(linelist, flinelist, 
-                default_dampnum = default_dampnum)
-            if wmin is None:
-                wmin = wmin_ll
-            if wmax is None:
-                wmax = wmax_ll
-            
-        if not os.path.exists(ts_opac_file):
-            print("Calling babsma")
-            run_turbospectrum("babsma", run_id=run_id+"OPAC", workdir=workdir,
-                marcs_mod_file = marcs_mod_file, ts_opac_file = ts_opac_file,
-                teff=teff, logg=logg, feh=feh, alphafe=alphafe,
-                feh_mod=feh_mod, alphafe_mod=alphafe_mod,
-                mdlatm_io=mdlatm_io, vt=vt,
-                default_dampnum=default_dampnum,
-                wmin = wmin-1, wmax = wmax+1,
-                spherical=spherical,
-                **kw_args)
-
+    #flinelist = os.path.abspath(flinelist) # This will throw an error currently
+    fmodelin = os.path.abspath(fmodelin) # ok 
+    ts_opac_file = os.path.abspath(ts_opac_file) #ok
+    fresult = os.path.abspath(fresult) # ok
+    fcommand = os.path.abspath(os.path.join(workdir,f"{run_id}.ts_input"))
+    flog = os.path.abspath(os.path.join(workdir, f"ts_{run_id}.log"))
+ 
     if (mode == 'babsma'):
+        # In case of babsma, we can use the MARCS model file or create it from stellar parameters
         if not marcs_mod_file is None:
             assert os.path.exists(marcs_mod_file),'marcs_mod_file specified does not exist'
             if not all((teff is None, logg is None,feh_mod is None, alphafe_mod is None )):
@@ -510,24 +525,6 @@ def run_turbospectrum(mode,
             feh = model['m_h']
         if alphafe is None:
             alphafe = model['alpha_m']
-    else:
-        if spherical is None:
-            assert os.path.exists(fmodelin), \
-                'marcs_mod_file specified does not exist'
-            model = marcs.read_marcs(fmodelin)
-            spherical = model["radius"] > 1
-                    
-        if (feh is None or alphafe is None) and (not marcs_mod_file is None):
-            assert os.path.exists(fmodelin),'marcs_mod_file specified does not exist'
-            model = marcs.read_marcs(fmodelin)
-            if feh_mod is None:
-                feh_mod = model['m_h']
-            if alphafe_mod is None:
-                alphafe_mod = model['alpha_m']
-            if feh is None:
-                feh = feh_mod
-            if alphafe is None:
-                alphafe = alphafe_mod
 
     # here create the ts_input dictionary
     abundances = {}
@@ -539,21 +536,16 @@ def run_turbospectrum(mode,
         for isospecies in kw_args["Isotope_dict"].keys():
             assert isospecies is str, 'Isotope_dict keys should be str'
             isotopes[isospecies] = kw_args["Isotope_dict"][isospecies]
-    ts_input = ts_default_input.copy()
+    ts_input = {value[0]: value[1] for value in ts_default_input.values()}
     ts_input["LAMBDA_MIN"] = wmin
     ts_input["LAMBDA_MAX"] = wmax
-    if "LAMBDA_STEP" in kw_args.keys():
-        ts_input["LAMBDA_STEP"] = float(kw_args["LAMBDA_STEP"])
+    ts_input["LAMBDA_STEP"] = float(dwvl_step)
     for key in ts_default_input.keys():
         if key in kw_args.keys():
-            ts_input[key] = kw_args[key]
-    for key in ts_nocheck_input:
+            ts_input[ts_default_input[key][0]] = kw_args[key]
+    for key in ts_nocheck_input.keys():
         if key in kw_args.keys():
-            ts_input[key] = kw_args[key]
-    for key in kw_args.keys():
-        if key not in list(ts_default_input.keys()) + \
-            list(ts_nocheck_input):
-            warnings.warn(f"Input {key} is not recognized by Turbospectrum. It will be ignored.")
+            ts_input[ts_nocheck_input[key]] = kw_args[key]
 
     assert feh is not None,'feh is not specified'
     ts_input["METALLICITY"] = feh
@@ -575,8 +567,8 @@ def run_turbospectrum(mode,
                     "I_X entries are prioritized over Isotope_dict inputs")
                 isotopes[isospecies] = val
             continue
-
-
+        if key not in list(ts_default_input.keys()) + list(ts_nocheck_input.keys()):
+            warnings.warn(f"Input {key} is not recognized by Turbospectrum. It will be ignored.")
     
     command_ts = ""
     if mode == 'babsma':
@@ -589,11 +581,11 @@ def run_turbospectrum(mode,
     for key in ts_input.keys():
         command_ts += f"'{key}:' '{ts_input_format(ts_input[key])}'\n"
     if len(abundances) > 0:
-        command_ts += f"'INDIVIDUAL ABUNDANCES: {ts_input_format(len(abundances))}'\n"
+        command_ts += f"'INDIVIDUAL ABUNDANCES:' '{ts_input_format(len(abundances))}'\n"
         for atomnum, abundance in abundances.items():
             command_ts += f"{atomnum} {abundance}\n"
     if len(isotopes) > 0:
-        command_ts += f"'ISOTOPES: {ts_input_format(len(isotopes))}'\n"
+        command_ts += f"'ISOTOPES:' '{ts_input_format(len(isotopes))}'\n"
         for isospecies, abundance in isotopes.items():
             command_ts += f"{isospecies} {abundance}\n"
             
@@ -608,19 +600,171 @@ def run_turbospectrum(mode,
     if mode == "syn":
         command_ts += f"'MODELOPAC:' '{ts_opac_file}'\n"+\
             f"'RESULTFILE:' '{fresult}'\n"
-        command_ts += f"'NFILES  :'    '{1}'\n"
-        # currently only supporting one linelist
-        command_ts += flinelist+'\n'
-#        for flinelist in flinelists:
-#            f.write(flinelist+'\n')
+        flinelist = np.atleast_1d(flinelist)
+        command_ts += f"'NFILES  :'    '{len(flinelist)}'\n"
+        #command_ts += flinelist+'\n'
+        for fl in flinelist:
+            command_ts += fl+'\n'
         command_ts += f"'SPHERICAL:'    '{ts_input_format(spherical)}'\n"
         command_ts += '  30\n  300.00\n  15\n  1.30\n'
     command_ts += "EOF" 
 
-    with open(os.path.join(cwd,workdir,f"{run_id}.ts_input"), 'w') as f:
+    with open(fcommand, 'w') as f:
         f.write(command_ts)
     os.chdir(workdir)
     if not os.path.exists("DATA"):
-        os.symlink( DATA_path, "DATA")
+        os.symlink(DATA_path, "DATA")
     os.system(command_ts)
     os.chdir(cwd)
+    
+    result_dict = {}
+    if mode == 'babsma':
+        result_dict["model"] = fmodelin
+        result_dict["opac_file"] = ts_opac_file
+        result_dict["command_file"] = fcommand
+        result_dict["log_file"] = flog
+    elif mode == 'syn': 
+        result_dict["opac_file"] = ts_opac_file
+        result_dict["linelist_file"] = flinelist
+        result_dict["result_file"] = fresult
+        result_dict["command_file"] = fcommand
+        result_dict["log_file"] = flog
+    return result_dict
+    
+def synth(linelist=None, run_id='', workdir='.',
+    ts_opac_file=None, marcs_mod_file=None,
+    teff=None, logg=None, feh=None, alphafe=None,
+    feh_mod=None, alphafe_mod=None,
+    mdlatm_io="marcs",
+    vt=None,
+    default_gamma_vw=3.,
+    wmin=None, wmax=None,
+    spherical = None, 
+    dwvl_step = 0.01,    
+    return_cntm = False,
+    **kw_args):
+    """
+    Synthesize a spectrum using Turbospectrum.
+    
+    Parameters
+    ----------
+    linelist : str or Linelist, optional
+        The linelist to be used. If a string is given, it should be the path to the linelist file.
+        If a Linelist object is given, it will be used directly.
+    
+    run_id : str, optional
+        The run ID for the synthesis. It will be used to create output files.
+    
+    workdir : str, optional
+        The working directory where the output files will be created.
+    
+    ts_opac_file : str, optional
+        The path to the Turbospectrum opacities file. If None, it will be created in the workdir.
+    
+    marcs_mod_file : str, optional
+        The path to the MARCS model file. If None, it will be created in the workdir.
+    
+    teff : float, optional
+        Effective temperature of the star.
+    
+    logg : float, optional
+        Surface gravity of the star.
+    
+    feh : float, optional
+        Metallicity of the star.
+    
+    alphafe : float, optional
+        [alpha/Fe] ratio of the star.
+    
+    feh_mod : float, optional
+        Metallicity for the MARCS model. If None, it will use `feh`.
+    
+    alphafe_mod : float, optional
+        [alpha/Fe] ratio for the MARCS model. If None, it will use `alphafe`.
+    
+    mdlatm_io : str, optional
+        The MDLATM input/output method to use. Default is "marcs".
+    
+    vt : float or None, optional
+        Microturbulence velocity. If None and `mode` is 'syn', it will be set to 0.0.
+    
+    default_dampnum : float, optional
+        Default damping number for babsma. Default is 3.0.
+    
+    wmin, wmax : float or None, optional
+        Minimum and Maximum wavelength for the synthesis. If None, it will be set to the minimum wavelength in the linelist.
+    
+    spherical : bool or None, optional
+        If True, the model atmosphere is spherical. If None, it will be determined from the MARCS model.
+        
+    dwvl_margine : float, optional
+        The margin in wavelength for the synthesis. Default is 2.0.
+        
+    dwvl_step : float, optional
+        The step size in wavelength for the synthesis. Default is 0.01.
+    **kw_args : dict, optional
+        Additional keyword arguments to be passed to the run_turbospectrum function.
+    """
+       
+    t0 = time.time()
+    tint = np.base_repr(int(t0),36)
+    t2 = int((t0 - int(t0))*1e2)
+    run_id += f"{tint:s}{t2:02d}"
+    if isinstance(linelist,str) or \
+        (isinstance(linelist, list) and (isinstance(linelist[0], str))):
+        flinelist = linelist
+        # linelist is a file name or a list of file names
+        linelist = np.atleast_1d(linelist)
+        for l1 in linelist:
+            if not os.path.exists(l1):
+                raise ValueError(f'linelist file {l1} does not exist')
+            # If wmin or wmax is not specified, we have to get them from the linelist
+            if wmin is None or wmax is None:
+                linelist = read_linelist(l1)
+                if wmin is None:
+                    wmin = linelist['wavelength'].min()
+                if wmax is None:
+                    wmax = linelist['wavelength'].max()
+    else:
+        flinelist = os.path.join(workdir,f"linelist_{run_id}.lin")
+        wmin_ll, wmax_ll = write_linelist(linelist, flinelist, 
+            default_dampnum = default_gamma_vw)
+        if wmin is None:
+            wmin = wmin_ll
+        if wmax is None:
+            wmax = wmax_ll
+    
+    if ts_opac_file is None:
+        ts_opac_file = os.path.join(workdir, f"ts_{run_id}.opac")
+        result_babsma = run_turbospectrum("babsma", run_id=run_id+"_babsma", 
+            workdir=workdir, marcs_mod_file=marcs_mod_file, 
+            teff=teff, logg=logg, feh=feh, alphafe=alphafe,
+            feh_mod=feh_mod, alphafe_mod=alphafe_mod,
+            mdlatm_io=mdlatm_io, vt=vt,
+            wmin=wmin, wmax=wmax, 
+            **kw_args)
+        ts_opac_file = result_babsma["opac_file"]
+        marcs_mod_file = result_babsma["model"]
+    
+    # Get info about whether the model atmosphere is spherical or not
+    if spherical is None:
+        if marcs_mod_file is None:
+            raise ValueError("spherical is not specified and marcs_mod_file is None")
+        model = marcs.read_marcs(marcs_mod_file) 
+        spherical = model["radius"] != 1.0
+   
+    result_syn = run_turbospectrum("syn", linelist=flinelist,
+        run_id=run_id, workdir=workdir,
+        ts_opac_file=ts_opac_file,
+        feh =  feh, alphafe=alphafe,
+        spherical=spherical,
+        wmin = wmin, wmax = wmax,
+        **kw_args)
+    wvl, flx, cntm = np.loadtxt(result_syn["result_file"]).T
+    if return_cntm:
+        return wvl, flx, cntm
+    else:
+        return wvl, flx
+    
+        
+    
