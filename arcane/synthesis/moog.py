@@ -43,8 +43,7 @@ solar_moog = [
 ]
 
 moog_path = ""
-home_path = os.path.expanduser("~")
-src_path = os.path.join(home_path,".arcanesrc")
+src_path = os.path.expanduser("~/.arcanesrc")
 
 def find_moogsilent():
     global moog_path

@@ -3,8 +3,40 @@ import pandas
 from arcane.utils import utils
 from scipy.interpolate import CubicSpline
 from arcane.mdlatm.base import ModelAtm
+import os
+import json
+import shutil
 
-data_dir = '/mnt/d/model_atm/MARCS/' ## CHANGE THIS 
+#data_dir = '/mnt/d/model_atm/MARCS/' ## CHANGE THIS 
+
+src_path = os.path.expanduser("~/.arcanesrc")
+
+def find_data_dir():
+    global data_dir
+    # This function reads the location of MOOGSILENT from .arcanesrc
+    arcane_config = json.load(open(src_path,"r"))
+    if not "marcs_dir" in arcane_config.keys():
+        print("marcs_dir is not set in the .arcanesrc file")
+        print("Call set_marcs_path to set the path")
+        return
+    data_dir  = arcane_config["marcs_dir"]
+    if not os.path.exists(data_dir):
+        print("MARCS data directory does not exist at the specified path:{0:s}".format(data_dir))
+        print("Call set_marcs_path to set the path")
+        return
+    print("MARCS data directory location: {0:s}".format(data_dir))
+    return
+
+def set_marcs_path(marcs_path):
+    if os.path.exists(marcs_path):
+        shutil.copy(src_path,src_path+"_old")
+        arcane_setup = json.load(open(src_path,"r"))
+        arcane_setup["marcs_dir"] = marcs_path
+        json.dump(arcane_setup,open(src_path,"w"))
+    find_data_dir()
+
+find_data_dir()
+
 with open(data_dir+'MARCS_avai.dat') as fout:
   grid_value = {}
   for line in fout.readlines():

@@ -8,9 +8,37 @@ import warnings
 from astropy.constants import N_A
 from arcane.mdlatm import marcs
 from arcane.mdlatm.base import ModelAtm
+import json
+import shutil
 
-data_dir = '/mnt/d/model_atm/AVG3D/' ## CHANGE THIS 
 
+src_path = os.path.expanduser("~/.arcanesrc")
+
+def find_data_dir():
+    global data_dir
+    # This function reads the location of MOOGSILENT from .arcanesrc
+    arcane_config = json.load(open(src_path,"r"))
+    if not "avg3d_dir" in arcane_config.keys():
+        print("avg3d_dir is not set in the .arcanesrc file")
+        print("Call set_avg3d_path to set the path")
+        return
+    data_dir  = arcane_config["avg3d_dir"]
+    if not os.path.exists(data_dir):
+        print("AVG3D data directory does not exist at the specified path:{0:s}".format(data_dir))
+        print("Call set_avg3d_path to set the path")
+        return
+    print("AVG3D data directory location: {0:s}".format(data_dir))
+    return
+
+def set_avg3d_path(avg3d_path):
+    if os.path.exists(avg3d_path):
+        shutil.copy(src_path,src_path+"_old")
+        arcane_setup = json.load(open(src_path,"r"))
+        arcane_setup["avg3d_dir"] = avg3d_path
+        json.dump(arcane_setup,open(src_path,"w"))
+    find_data_dir()
+
+find_data_dir()
 allmodels = readsav(os.path.join(data_dir,'avg3d.sav'))['a']
 
 
