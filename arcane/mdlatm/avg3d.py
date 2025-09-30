@@ -42,9 +42,9 @@ find_data_dir()
 allmodels = readsav(os.path.join(data_dir,'avg3d.sav'))['a']
 
 
-def read_model(teff,logg,mh):
+def extract_model(teff,logg,mh):
     
-    model = {}
+    model = Avg3d()
     model['modeltype'] = 'avg3d'
     model['comment'] = ''
     model['input_parameters'] = (teff,logg,mh)
@@ -111,7 +111,7 @@ def get_model(teff, logg, mh, alphafe=None,
                 '222':[teff2,logg2,mh2],}
     models = {}
     for grid_key in params.keys():
-        models[grid_key] = read_model(*params[grid_key])
+        models[grid_key] = extract_model(*params[grid_key])
 
     ## Interpolation in mh
     alpha_values = {'T':1.-(teff/4000.)**2.0,\
@@ -157,7 +157,80 @@ def get_model(teff, logg, mh, alphafe=None,
         return models
     else:
         return models['000']
+
+def write_avg3d(filename,model):
+    '''
+    Write out a model atmosphere in my format
     
+    Parameters
+    ----------
+    filename : str
+        Output filename
+    model : Avg3d
+        Model atmosphere to write
+    '''
+    assert model["modeltype"] == "avg3d", "Model is not an avg3d model"
+    
+    with open(filename,'w') as f:
+        f.write(f"Model atmosphere: {model['modelname']}\n")
+        f.write(f"Teff,logg,[Fe/H],[alpha/Fe],mass: {model['teff']},{model['logg']},{model['m_h']},{model['alpha_m']},{model['mass']}\n")
+        f.write(f"Geometry: {model['geometry']}\n")
+        
+        f.write(f"ndepth: {model['ndepth']}\n")
+        f.write(f"lgTauR, T, Pg, Pe, Mu, AlphaTauR, KappaRoss, Density, Pturb, Prad\n")
+        for i in range(model['ndepth']):
+            f.write(f"{model['lgTauR'][i]:.6e} {model['T'][i]:.2f} {model['Pg'][i]:.6e} {model['Pe'][i]:.6e} {model['Mu'][i]:.6e} {model['AlphaTauR'][i]:.6e} {model['KappaRoss'][i]:.6e} {model['Density'][i]:.6e} {model['Pturb'][i]:.6e} {model['Prad'][i]:.6e}\n")
+    
+def read_avg3d(filename):
+    '''
+    Read in a model atmosphere in my format
+    
+    Parameters
+    ----------
+    filename : str
+        Input filename
+    
+    Returns
+    -------
+    model : Avg3d
+        Model atmosphere
+    '''
+    model = Avg3d()
+    model['modeltype'] = 'avg3d'
+    with open(filename,'r') as f:
+        lines = f.readlines()
+    ii = 0
+    for line in lines:
+        ii += 1
+        if line.startswith("Model atmosphere:"):
+            model['modelname'] = line.split(":")[1].strip()
+        elif line.startswith("Teff,logg,[Fe/H],[alpha/Fe],mass:"):
+            teff,logg,mh,am,mass = [float(v) for v in line.split(":")[1].strip().split(",")]
+            model['teff'] = teff
+            model['logg'] = logg
+            model['gravity'] = 10.**logg
+            model['m_h'] = mh
+            model['alpha_m'] = am
+            model['mass'] = mass
+        elif line.startswith("Geometry:"):
+            model['geometry'] = line.split(":")[1].strip()
+        elif line.startswith("ndepth:"):
+            model['ndepth'] = int(line.split(":")[1].strip())
+            break
+        else:
+            warnings.warn("Unknown line, skipping: "+line)
+    line = lines[ii]
+    columns = [line.replace(" ","") for line in line.split(",")]
+    for col in columns:
+        model[col] = np.zeros(model['ndepth'],dtype=float)
+    ii += 1
+    for i in range(model['ndepth']):
+        line = lines[ii]
+        ii += 1
+        values = [float(v) for v in line.strip().split()]
+        for j,col in enumerate(columns):
+            model[col][i] = values[j]
+    return model
 
 class Avg3d(ModelAtm):
     '''
@@ -165,7 +238,5 @@ class Avg3d(ModelAtm):
     '''
     def __init__(self,*args,**kwargs):
         super(Avg3d,self).__init__(*args,**kwargs)
-#    def write(self,filename):
-#        marcs.write_marcs(filename,self)
-#    def resample(self,lgTauR):
-#        return marcs.resample(self,lgTauR)
+    def write(self,filename):
+        write_avg3d(filename,self)
