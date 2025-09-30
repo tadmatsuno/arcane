@@ -53,7 +53,7 @@ def extract_model(teff,logg,mh):
     if len(tgmodels)==0:
         raise ValueError(f'Teff = {teff} logg = {logg} combinations do not exist')
     _mh = np.clip(mh,np.min(tgmodels['FEH']),np.max(tgmodels['FEH']))
-    if mh != mh:
+    if mh != _mh:
         warnings.warn(f'[Fe/H]={mh} is outside of grid. Extrapolated.')
     m1 = tgmodels[tgmodels['FEH']==_mh][0]
     model['modelname'] = m1['NAME'].decode()
