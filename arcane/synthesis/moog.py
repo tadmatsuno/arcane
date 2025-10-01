@@ -11,6 +11,7 @@ from arcane.mdlatm import marcs,avg3d
 import tempfile
 from arcane.synthesis.readvald import convert_sigma_alpha_to_gamma,Linelist
 import json
+import time
 
 ## Detail see Params.f
 moog_default_input = {
@@ -42,8 +43,7 @@ solar_moog = [
 ]
 
 moog_path = ""
-home_path = os.path.expanduser("~")
-src_path = os.path.join(home_path,".arcanesrc")
+src_path = os.path.expanduser("~/.arcanesrc")
 
 def find_moogsilent():
     global moog_path
@@ -106,7 +106,7 @@ def get_moog_species_id(species):
             # If c is an uppercase, it should correspond to the beginning of a new element
             # e will always be a lowercase, it should be read at the end
             for ii,s in enumerate(species):
-                if s.isupper() &(ii>i0):
+                if s.isupper() and (ii>i0):
                     atomnums.append(get_atomnum(species[i0:ii]))
                     i0 = ii
             atomnums.append(get_atomnum(species[i0:]))
@@ -304,8 +304,41 @@ def check_line_density(wvls, dwvl_margin):
             return True
     return False
 
+def read_moog_mod(fname):
+    '''
+    Currently doesn't return any information about the molecules included.
+    '''
+    model_out = {}
+    with open(fname,'r') as f:
+        model_format = f.readline()
+        model_out["model_name"] = f.readline()[-1]
+        model_out["Nlayer"] = int(f.readline()[10:-1])
+        if model_format.startswith("BEGN"):
+            input_variables = ["lgTauR", "T", "Pg", "Pe", "Mu", "KappaRoss"]
+        elif model_format.startswith("KURUCZ"):
+            input_variables = ["rhox", "T", "Pg", "Pe", "KappaRoss"]
+        elif model_format.startswith("NEWMARCS"):
+            input_variables = ["lgTauR", "T", "Pe", "Pg", "rho", "vturb", "KappaRoss"]
+        else:
+            raise ValueError(f"Unknown model format: {model_format}")
+        for var in input_variables:
+            model_out[var] = []
+        for ii in range(model_out["Nlayer"]):
+            line = f.readline()
+            xx = line.split()[:len(input_variables)]
+            for x,var in zip(xx, input_variables):
+                model_out[var].append(float(x))
+        for var in input_variables:
+            model_out[var] = np.array(model_out[var])
+        vt = float(f.readline()[0:6])
+        model_out["vt"] = vt
+        line = f.readline()
+        natom = int(line.split()[1])
+        m_h = float(line.split()[2])
+        model_out["m_h"] = m_h
+    return model_out        
 
-def write_linelist(linelist,flinelist,isabfind=False,defalut_gamma_vw=3.,dwvl_margin=2.0,head1=True):
+def write_linelist(linelist,flinelist,isabfind=False,default_gamma_vw=3.,dwvl_margin=2.0,head1=True):
     if isinstance(linelist,(dict,pandas.DataFrame,Linelist)):
         if isinstance(linelist,Linelist) and hasattr(linelist,'scaled') and not linelist.scaled:
             print("Linelist is not scaled. Applying scaling according to the solar isotopic abundances")
@@ -344,10 +377,10 @@ def write_linelist(linelist,flinelist,isabfind=False,defalut_gamma_vw=3.,dwvl_ma
         gamma_vw = np.zeros(nline)
         for ii in range(nline):
             g_vw = linelist['gamma_vw'][ii]
-            if g_vw < 0.0:
+            if (g_vw < 0.0) or ((0 < g_vw) and (g_vw < 10)):
                 gamma_vw[ii] = g_vw
             elif g_vw == 0.0:
-                gamma_vw[ii] = defalut_gamma_vw
+                gamma_vw[ii] = default_gamma_vw
             else:
                 sigma,alpha = int(g_vw),g_vw-int(g_vw)
                 try:
@@ -364,10 +397,14 @@ def write_linelist(linelist,flinelist,isabfind=False,defalut_gamma_vw=3.,dwvl_ma
         with open(flinelist, 'w') as f:
             if head1:
                 f.write('Linelist createad by arcane\n')
-            #TODO:Support for HFS?   
+            #TODO:Support for HFS blends driver?   
             for ii in range(nline):
                 if linelist['expot'][ii] >= 50:
                     warnings.warn('lines with expot>50 ev will be skipped')
+                    continue
+                moog_species = linelist['moog_species'][ii]
+                if "." in moog_species and int(moog_species[moog_species.find('.')+1])>1:
+                    warnings.warn("MOOG does not support ionization stage > 1, thus this line will be skipped")
                     continue
                 f.write("{0:10.3f}{1:>10s}{2:10.3f}{3:10.3f}{4:10.3f}{5:10.3f}{6:10.3f}\n".\
                     format(linelist['wavelength'][ii],
@@ -382,7 +419,7 @@ def write_linelist(linelist,flinelist,isabfind=False,defalut_gamma_vw=3.,dwvl_ma
             raise ValueError('The line density is too high, and MOOG will like to go into an infinite loop. '+\
                              'Please reduce the line density or decrease dwvl_margin')
         wmin,wmax = np.min(linelist['wavelength']),np.max(linelist['wavelength'])
-    else:
+    elif isinstance(linelist,str):
         shutil.copy(linelist, flinelist)
         with open(flinelist,'r') as f:
             ww = [float(line.split()[0]) for line in f.readlines()[1:]]
@@ -390,23 +427,24 @@ def write_linelist(linelist,flinelist,isabfind=False,defalut_gamma_vw=3.,dwvl_ma
             raise ValueError('The line density is too high, and MOOG will like to go into an infinite loop. '+\
                              'Please reduce the line density or decrease dwvl_margin')
         wmin,wmax = np.min(ww),np.max(ww)
+    else: 
+        raise TypeError('linelist should be a dict, pandas.DataFrame, Linelist class or a filename')
     return wmin,wmax
 
-
 def run_moog(mode, linelist, run_id = '', workdir = '.',
-    moog_mod_file = None, mod_file = None, 
+    moog_mod_file = None, marcs_mod_file = None, 
     teff = None, logg = None, feh = None, alphafe = None, 
     feh_mod = None, alphafe_mod = None,
     mdlatm_io = 'marcs',
     vt = None, 
-    defalut_gamma_vw = 3.,
+    wmin = None, wmax= None,
+    default_gamma_vw = 3.,
     species_vary = 0,
     dwvl_margin = 2.0,
     dwvl_step = 0.01,
     cog_ew_minmax = [-7,-4],
-    part_of_parallel = False,
+    part_of_parallel = False,# I think this should be handled outside this function.
     strong_lines = None,
-    wmin = None, wmax= None,
     **kw_args):
     '''
     Run MOOG with a given linelist and model atmosphere.
@@ -437,7 +475,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     linelist : Linelist class, str or dict or pandas.DataFrame
         If it is a string, it is the filename of the linelist in MOOG format.
         If it is a dict or pandas.DataFrame, it is the linelist, which should have the following keys:
-        'wvl', one of ('species', 'moog_species'), 'loggf', 'expot'
+        'wavelength', one of ('species', 'moog_species'), 'loggf', 'expot'
         It is strongly recommended to pass moog_species as str, not float.
         optional keys: 'ew', 'gamma_vw', 'd0'
         Note that the MOOG currently does not allow one to change damping parameters for Stark and radiation damping.
@@ -452,7 +490,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     moog_mod_file : str, optional
         The filename of the model atmosphere in MOOG format.
     
-    mod_file : str, optional
+    marcs_mod_file : str, optional
         The filename of the model atmosphere.
     
     teff : float, optional
@@ -481,7 +519,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         Overall scaling for the alpha abundances.
         Not implemented yet.
     
-    defalut_gamma_vw : float, optional
+    default_gamma_vw : float, optional
         Default Van der Waals damping constant for the lines.
         The default is 3.0, (the Unsold approximation will be multiplied by 3.0)
         If you use Vald, <0 will be used as valid inputs. For lines with gamma_vw = 0.0, the above default value will be used.
@@ -534,7 +572,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
 
     wmin_ll,wmax_ll = write_linelist(linelist,flinelist,
         isabfind=(mode in ['abfind']),
-        defalut_gamma_vw=defalut_gamma_vw,
+        default_gamma_vw=default_gamma_vw,
         dwvl_margin=dwvl_margin)
 #    print(wmin_ll,wmax_ll,wmin,wmax)
     if wmin is None:
@@ -544,7 +582,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
 #    print(wmin_ll,wmax_ll,wmin,wmax)
     if strong_lines is not None:
         write_linelist(strong_lines,fstrong_lines,
-            defalut_gamma_vw=defalut_gamma_vw,
+            default_gamma_vw=default_gamma_vw,
             dwvl_margin=dwvl_margin,           
             head1=False)
     else:
@@ -553,20 +591,21 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     if not moog_mod_file is None:
         assert os.path.exists(moog_mod_file), 'moog_mod_file specified does not exist'
         if any([not val is None for val in \
-            [mod_file, teff, logg, feh_mod, alphafe_mod, vt]]):
+            [marcs_mod_file, teff, logg, feh_mod, alphafe_mod, vt, feh]]):
             warnings.warn('moog_mod_file is provided. '+\
-                'marc_mod_file, teff, logg, feh_mod, alphafe_mod, vt will be ignored')
+                'marc_mod_file, teff, logg, feh_mod, alphafe_mod, vt, feh will be ignored')
         shutil.copy(moog_mod_file,fmodelin)
-        assert not vt is None,'vt is needed'
-        assert not feh is None,'feh is needed'
-    elif not mod_file is None:
+        moog_model = read_moog_mod(fmodelin)
+        feh = moog_model['m_h']
+#        feh = 
+    elif not marcs_mod_file is None:
         if not all((teff is None, logg is None,feh_mod is None, alphafe_mod is None )):
             warnings.warn(
                 'model file is directly provided. '+\
-                'Teff, logg, [Fe/H]_mod, and [alpha/Fe]_mod will be ignored')
-        assert os.path.exists(mod_file),'mod_file specified does not exist'
+                'Teff, logg, feh_mod, and alphafe_mod will be ignored')
+        assert os.path.exists(marcs_mod_file),'mod_file specified does not exist'
         assert not vt is None,'vt is needed'
-        model = mdlatm.read_model(mod_file)
+        model = mdlatm.read_model(marcs_mod_file)
         write_marcs2moog_model(fmodelin,model,vt, feh_overwrite = feh)
         if feh is None:
            feh = model['m_h']
@@ -721,7 +760,7 @@ def synth(linelist, run_id = '', workdir = '.',
     teff = None, logg = None, feh = None, alphafe = None, 
     feh_mod = None, alphafe_mod = None,
     vt = None, 
-    defalut_gamma_vw = 3.,
+    default_gamma_vw = 3.,
     species_vary = 0,
     wmin = None, wmax = None,
     dwvl_margin = 2.0,
@@ -744,6 +783,11 @@ def synth(linelist, run_id = '', workdir = '.',
 
     See also moog.run_moog for other parameters    
     '''
+    t0 = time.time()
+    tint = np.base_repr(int(t0),36)
+    t2 = int((t0 - int(t0))*1e2)
+    run_id += f"{tint:s}{t2:02d}"
+
     if isinstance(linelist,(dict,pandas.DataFrame)): 
         # Create linelist if it is not a filename        
         if type(linelist) is pandas.DataFrame: 
@@ -769,7 +813,7 @@ def synth(linelist, run_id = '', workdir = '.',
                         teff = teff, logg = logg, feh = feh, alphafe = alphafe,
                         feh_mod = feh_mod, alphafe_mod = alphafe_mod,
                         vt = vt,
-                        defalut_gamma_vw = defalut_gamma_vw,
+                        default_gamma_vw = default_gamma_vw,
                         species_vary = species_vary,
                         dwvl_margin = dwvl_margin,
                         dwvl_step = dwvl_step,

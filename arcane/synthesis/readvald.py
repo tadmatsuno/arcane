@@ -96,9 +96,9 @@ def convert_sigma_alpha_to_gamma(elem_num, sigma, alpha,t0=1.0e4*u.K):
 def get_atom_num(sp1):
     """
     This function does somehting like the following
-    Ba 2 -> ['Ba'] [56] 1
-    C2 1 -> ["C","C"] [6,6] 0
-    CH -> ["C","H"] [6,1] 0
+    Ba 2 -> ['Ba'] [56] 2
+    C2 1 -> ["C","C"] [6,6] 1
+    CH -> ["C","H"] [6,1] 1
     """
     atom_mol = sp1.split()[0]
     if len(sp1.split()) == 1:
@@ -121,7 +121,7 @@ def get_atom_num(sp1):
         atoms.append(atom_mol[start_idx:])
 
     zz = [elemtopnum(atom) for atom in atoms]
- 
+
     return atoms, zz, ion
 
 
@@ -311,11 +311,12 @@ def readvald(filename):
             linelist.loc[isotope_species==sp1,f"A{ii+1}"] = zzaa[1]
         linelist.loc[isotope_species==sp1,"ion"] = out1[3]
     
+    mask_noiso = (linelist["Z1"]==0)
     for sp1 in np.unique(linelist["species"].values):
         out1 = get_atom_num(sp1)
-        linelist.loc[(linelist["species"]==sp1)&(linelist["Z1"]==0),"ion"] = out1[2]    
+        linelist.loc[(linelist["species"]==sp1) & mask_noiso,"ion"] = out1[2]    
         for ii,zz in enumerate(out1[1]):
-            linelist.loc[(linelist["species"]==sp1)&(linelist["Z1"]==0),f"Z{ii+1}"] = zz
+            linelist.loc[(linelist["species"]==sp1)&mask_noiso,f"Z{ii+1}"] = zz
     return linelist
 
 def read_valdshort(filename):# for backwards compatibility

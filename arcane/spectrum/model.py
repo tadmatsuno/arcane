@@ -23,6 +23,11 @@ class ModelBase:
         '''
         Base class for model spectra, which could be a continuum, 
         (an) absorption line(s), synthetic spectra
+        fbase is a function that synthesize a model spectrum that takes wavelength as an argument
+        fupdate is a function that searches for best-fit parameters
+        
+        The fit function of this class performs fitting together with sigma-clipping.
+        Once fitting is conducted, wavelength and flux of the data are stored as attributes.
         '''
         self.fbase = fbase
         self.fupdate = fupdate
@@ -490,7 +495,8 @@ class LineProfile(ModelBase):
         initial_depth = 0.3, initial_fwhm = 0.1,
         niterate = 10, low_rej = 3., high_rej = 5., grow = 0.05,
         naverage = 1, fit_mode = 'subtract', snr = 50.,
-        samples = [], std_from_central = False, kw_fit_control = {}):
+        samples = [], std_from_central = False, 
+        **kwargs):
         '''
         Continuum expressed with a polynomical function
 
@@ -550,8 +556,8 @@ class LineProfile(ModelBase):
         self.fit_control = {}
         for key in self.default_fit_control.keys():
             value_in = self.default_fit_control[key]
-            if key in kw_fit_control.keys():
-                value_in = kw_fit_control[key]
+            if key in kwargs.keys():
+                value_in = kwargs[key]
             if key in ['fix_dwvl','fix_fwhm','voigt']:
                 if len(np.atleast_1d(value_in)) == 1:
                     self.fit_control[key] = np.atleast_1d(value_in).repeat(self.nlines)
@@ -560,9 +566,9 @@ class LineProfile(ModelBase):
                     self.fit_control[key] = np.atleast_1d(value_in)
             else:
                 self.fit_control[key] = value_in
-        for key in kw_fit_control.keys():
+        for key in kwargs.keys():
             if not key in self.default_fit_control.keys():
-                warnings.warn(f'{key} is ignored since it is not a valid keyword for kw_fit_control')
+                warnings.warn(f'{key} is ignored since it is not a valid keyword for fit_control')
 
 
 
@@ -671,10 +677,12 @@ def _fsynth4parallel(dict_synth_tmp,fsynth):
 
 class LineSynth1param(ModelBase):
     fit_control_default = {'fix_vFWHM':True, 
+                          'fix_vshift':True,
                           'force_recompute':False,
                           'delta_bounds_main':(-2,2),
                           'bounds_main':(None,None), 
                           'bounds_vfwhm':(0.0,15.0),
+                          "bounds_vshift":(-10,10),
                           'xatol':0.01}
 
     def evaluate(self,xx , force_recompute = False):
@@ -712,7 +720,7 @@ class LineSynth1param(ModelBase):
             wvl = self.grid['wvl'] 
             flux = f1 * self.grid[x1] + f2 * self.grid[x2]
         smoothed = utils.smooth_spectrum(wvl,flux,self.model_parameters['vFWHM'])
-        return utils.rebin(wvl,smoothed,xx,conserve_count=False)
+        return utils.rebin(wvl,smoothed, xx * (1.+self.model_parameters['vshift']/ckm),conserve_count=False)
     
     def construct_grid(self):
         self._construct_grid(self.update_synth_parameter,self.fit_control['bounds_main'],self.grid_size,self.grid_scale)
@@ -757,70 +765,38 @@ class LineSynth1param(ModelBase):
             if not 'wvl' in self.grid.keys():
                 self.grid['wvl'] = results[ii][0]
             self.grid[xx_new[ii]] = results[ii][1]
-
-#        while (xx<xf):
-#            xx_grids.append(xx)
-#            if not xx in self.grid.keys():
-#                dict_synth_tmp = self.synth_parameters.copy()
-#                if grid_scale == 'linear':
-#                    dict_synth_tmp[name_parameter] = xx*grid_size
-#                elif grid_scale == 'log':
-#                    dict_synth_tmp[name_parameter] = 10.**(xx*grid_size)
-#                wvl,flux = self.fsynth(**dict_synth_tmp)
-#                if not 'wvl' in self.grid.keys():
-#                    self.grid['wvl'] = wvl
-#                self.grid[xx] = flux
-#            xx = xx + 1
         finterp = interp1d(np.array(xx_grids)*grid_size,np.array([self.grid[x] for x in xx_grids]).T,kind='cubic',\
             fill_value=(self.grid[xx_grids[0]],self.grid[xx_grids[-1]]),bounds_error=False)
         if grid_scale == 'linear':
             self.grid['finterp'] = lambda x: finterp(x)
         elif grid_scale == 'log':
             self.grid['finterp'] = lambda x: finterp(np.log10(x))
-        
-            
-                
+                                   
     def update(self,xx,yy):
         def f_residual(xi):
             if self.update_synth_parameter.startswith('I_'):
                 self.synth_parameters[self.update_synth_parameter] = 10.**xi[0]
             else:
                 self.synth_parameters[self.update_synth_parameter] = xi[0]
+            i0 = 1
             if not self.fit_control['fix_vFWHM']:
                 # FWHM is also one of the fitting parameters
-                self.model_parameters['vFWHM'] = xi[1]
+                self.model_parameters['vFWHM'] = xi[i0]
+                i0 += 1
+            if not self.fit_control['fix_vshift']:
+                # vshift is also one of the fitting parameters
+                self.model_parameters['vshift'] = xi[i0]
             residual = np.sum((self.evaluate(xx,self.fit_control['force_recompute'])-yy)**2.)*(self.snr**2.0)
             return residual
-        fix_vFWHM = self.fit_control['fix_vFWHM']
-        self.fit_control['fix_vFWHM'] = True
-        if self.update_synth_parameter.startswith('I_'):
-            # If isotpe ratio, use log scale
-            if hasattr(self,'grid'):
-                grid_values = list(self.grid.keys())
-                for key in ['wvl','finterp']:
-                    if key in grid_values:
-                        grid_values.remove(key)
-                chisq = np.array([f_residual([val*self.grid_size]) for val in grid_values])
-                x0 = [np.log10(grid_values[np.argmin(chisq)]*self.grid_scale)]
-            else:
-                x0 = [np.log10(self.synth_parameters[self.update_synth_parameter])]
-        else:
-            if hasattr(self,'grid'):
-                grid_values = list(self.grid.keys())
-                for key in ['wvl','finterp']:
-                    if key in grid_values:
-                        grid_values.remove(key)
-                chisq = np.array([f_residual([val*self.grid_size]) for val in grid_values])
-                x0 = [grid_values[np.argmin(chisq)]*self.grid_size]
-            else:
-                x0 = [self.synth_parameters[self.update_synth_parameter]]
-        self.fit_control['fix_vFWHM'] = fix_vFWHM
         xatol = self.fit_control['xatol']
         bounds = [self.fit_control['bounds_main']]
         
         if not self.fit_control['fix_vFWHM']:
             x0.append(self.model_parameters['vFWHM'])
             bounds.append(self.fit_control['bounds_vfwhm'])
+        if not self.fit_control['fix_vshift']:
+            x0.append(self.model_parameters['vshift'])
+            bounds.append(self.fit_control['bounds_vshift'])
         x0 = [np.clip(x0[ii],bounds[ii][0],bounds[ii][1]) for ii in range(len(x0))]
         
         initial_simplex = np.array([np.array(x0)]*(len(x0)+1))
@@ -842,11 +818,12 @@ class LineSynth1param(ModelBase):
         niterate = 10, low_rej = 3., high_rej = 5., grow = 0.05,
         naverage = 1, fit_mode = 'subtract',
         samples = [], std_from_central = False, 
-        kw_fit_control = fit_control_default):
+        **kwargs):
         '''
         This class is to fit a synthetic spectrum to an observed spectrum.
         Only one parameter can be fit. If more than one parameter is to be fit, use LineSynth.
         Note that linear interpolation is adopted.
+        The best use is to construct a precomputed grid using construct_grid function.
 
         Parameters
         ----------
@@ -903,17 +880,18 @@ class LineSynth1param(ModelBase):
             niterate = niterate, low_rej = low_rej, high_rej = high_rej, grow = grow,
             naverage = naverage, fit_mode = fit_mode,
             samples = samples, std_from_central = std_from_central)
+        
         assert parameter_to_fit in synth_parameters.keys(), f'{parameter_to_fit} must be included in synth_parameters'
         self.fsynth = fsynth
         self.snr = snr
         self.synth_parameters = synth_parameters
         self.update_synth_parameter = parameter_to_fit
-        self.model_parameters = {'vFWHM':vfwhm_in}
+        self.model_parameters = {'vFWHM':vfwhm_in, "vshift":0.0}
         self.grid_size = grid_size
         assert grid_scale in ['linear','log'], 'grid_scale must be either linear or log'
         self.grid_scale = grid_scale
         self.fit_control = self.fit_control_default.copy()
-        for key,val in kw_fit_control.items():
+        for key,val in kwargs.items():
             if not key in self.fit_control_default.keys():
                 warnings.warn(f'{key} is not a valid parameter for fit-controlling, thus ignored.')
             self.fit_control[key] = val
@@ -929,7 +907,7 @@ class LineSynth1param(ModelBase):
 #        self.grid = {} # I might need to put this back 
 
 class ContinuumAbsorptionModel:
-    def __init__(self,model_absorption,model_continuum = None, niterate = 3, fit_vshift=True) -> None:
+    def __init__(self,model_absorption,model_continuum = None, niterate = 3) -> None:
         '''
         This class is to model the continuum and absorption simultaneously.
         The fit is done by iteratively fitting the continuum and absorption, so
@@ -939,8 +917,6 @@ class ContinuumAbsorptionModel:
         self.model_absorption = model_absorption
         self.model_continuum = model_continuum
         self.niterate = niterate
-        self.fit_vshift = fit_vshift
-        self.vshift = 0.0
     
     def __call__(self,force_recompute=False):
         assert hasattr(self,'wavelength'), 'Set wavelength first!'
@@ -963,9 +939,6 @@ class ContinuumAbsorptionModel:
         xx = xx_in.copy()
         if self.model_continuum is None:
             self.model_absorption.fit(xx,1.0-yy)
-            if self.fit_vshift:
-                self.vshift = cross_corr.measure_vshift(xx,self.evaluate(xx),yy,max_shift=10.0)
-                self.model_absorption.fit(xx/(1.0+self.vshift/ckm),1.0-yy)
         else:
             for ii in range(self.niterate):
                 #print(f'{ii+1} iteration')
@@ -973,15 +946,3 @@ class ContinuumAbsorptionModel:
                 self.model_absorption.fit(xx,1.0 - yy/self.model_continuum.evaluate(xx))
                 if debug:
                     print(f'{ii}th guess: {self.model_absorption.synth_parameters[self.model_absorption.update_synth_parameter]:.3f}')
-                samples = np.hstack([np.hstack(self.model_continuum.samples),
-                                     np.hstack(self.model_absorption.samples)])
-                ssmin,ssmax = np.min(samples),np.max(samples)
-                maskrv = (ssmin<xx) & (xx<ssmax)
-                if self.fit_vshift and (ii==0):
-                    self.vshift = cross_corr.measure_vshift(xx[maskrv], \
-                        1.0-self.model_absorption.evaluate(xx[maskrv]), 
-                        yy[maskrv] / self.model_continuum.evaluate(xx[maskrv]),
-                        max_shift=10.0)
-                    if debug:
-                        print(f'RV estimate:{self.vshift:.3f} km/s')
-                    xx = xx_in/(1.0+self.vshift/ckm)

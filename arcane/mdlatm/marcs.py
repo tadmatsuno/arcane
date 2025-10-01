@@ -3,8 +3,41 @@ import pandas
 from arcane.utils import utils
 from scipy.interpolate import CubicSpline
 from arcane.mdlatm.base import ModelAtm
+import os
+import json
+import shutil
+from dataclasses import dataclass
 
-data_dir = '/mnt/d/model_atm/MARCS/' ## CHANGE THIS 
+#data_dir = '/mnt/d/model_atm/MARCS/' ## CHANGE THIS 
+
+src_path = os.path.expanduser("~/.arcanesrc")
+
+def find_data_dir():
+    global data_dir
+    # This function reads the location of MOOGSILENT from .arcanesrc
+    arcane_config = json.load(open(src_path,"r"))
+    if not "marcs_dir" in arcane_config.keys():
+        print("marcs_dir is not set in the .arcanesrc file")
+        print("Call set_marcs_path to set the path")
+        return
+    data_dir  = arcane_config["marcs_dir"]
+    if not os.path.exists(data_dir):
+        print("MARCS data directory does not exist at the specified path:{0:s}".format(data_dir))
+        print("Call set_marcs_path to set the path")
+        return
+    print("MARCS data directory location: {0:s}".format(data_dir))
+    return
+
+def set_marcs_path(marcs_path):
+    if os.path.exists(marcs_path):
+        shutil.copy(src_path,src_path+"_old")
+        arcane_setup = json.load(open(src_path,"r"))
+        arcane_setup["marcs_dir"] = marcs_path
+        json.dump(arcane_setup,open(src_path,"w"))
+    find_data_dir()
+
+find_data_dir()
+
 with open(data_dir+'MARCS_avai.dat') as fout:
   grid_value = {}
   for line in fout.readlines():
@@ -34,15 +67,15 @@ def get_filename1(geometry,teff,logg,mh,alpha=None):
   return data_dir+g1.iloc[0]['filename']
 
 
-def resample_model(model,lgtauRnew):
-  new_model = model.copy()
-  new_model['ndepth'] = len(lgtauRnew)
-  new_model['lgTauR'] = lgtauRnew
-  for key in model.keys():
-    if (type(model[key]) is np.ndarray) and (key != 'lgTauR'):
-      cs = CubicSpline(model['lgTauR'],model[key])
-      new_model[key] = cs(new_model['lgTauR'])
-  return new_model
+#def resample_model(model,lgtauRnew):
+#  new_model = model.copy()
+#  new_model['ndepth'] = len(lgtauRnew)
+#  new_model['lgTauR'] = lgtauRnew
+#  for key in model.keys():
+#    if (type(model[key]) is np.ndarray) and (key != 'lgTauR'):
+#      cs = CubicSpline(model['lgTauR'],model[key])
+#      new_model[key] = cs(new_model['lgTauR'])
+#  return new_model
       
 
 
@@ -58,7 +91,9 @@ def interp_model2(model1,model2,w2,alpha={},\
     'Interpolation error, model geometry mismatch'
   assert model1['modeltype']==model2['modeltype'],\
     'Interpolation error, modeltype mismatch'
-  model_new = MARCS()
+  assert type(model1) is type(model2),\
+    'Interpolation error, model type mismatch'
+  model_new = type(model1)()
   model_new['comment'] = ''
   model_new['comment'] += model1['comment']
   model_new['comment'] += model2['comment']
@@ -76,7 +111,7 @@ def interp_model2(model1,model2,w2,alpha={},\
   if is_resample:
     print('Resampling required')
     model_new['lgTauR'] = tauR1[(np.min(tauR2)<=tauR1)&(tauR1<=np.max(tauR2))]
-    model2 = resample_model(model2,model_new['lgTauR'])
+    model2.resample_model(model_new['lgTauR'], inplace=True)
   model_new['ndepth'] = len(model_new['lgTauR'])
 
   def get_weight(key):
@@ -520,6 +555,7 @@ def read_marcs(filename):
 
 read_model = read_marcs
 
+
 class MARCS(ModelAtm):
   '''
   Class for MARCS model atmospheres
@@ -528,6 +564,3 @@ class MARCS(ModelAtm):
     super(MARCS, self).__init__(*args, **kwargs)
   def write(self,filename):
     write_marcs(filename,self)
-  def resample(self,lgtauRnew):
-    return resample_model(self,lgtauRnew)
-
