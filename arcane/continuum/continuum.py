@@ -238,8 +238,8 @@ class PlotCanvas(FigureCanvas):
     Displays cursor position
     '''
     x,y = event.xdata,event.ydata
-    self.cursorx.set_xdata(x)
-    self.cursory.set_ydata(y)
+    self.cursorx.set_xdata(np.atleast_1d(x))
+    self.cursory.set_ydata(np.atleast_1d(y))
     if not ((x is None)|(y is None)):
       self.txt.set_text('x={0:10.3f}    y={1:10.5f}'.format(x,y))
     self.draw()

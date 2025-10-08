@@ -12,8 +12,23 @@ if not os.path.exists('readmultispec.py'):
   exit
 import readmultispec
 
-
 if __name__ == '__main__':
+  print("This should launch a new graphical window")
+  print("Once it is launced you can change parameters interactively")
+  print("For a long1d format, such as UVES spectra from ESO archive,")
+  print("a spectrum is split into small pieces so that you can slightly")
+  print("modify your approach depending on S/N and line densities at ")
+  print("different wavelength.")
+  print("You can also use multispec format of iraf\n")
+
+  print("In the graphical window, a few shortcut keys are prepared")
+  print("[n] to move to a different region")
+  print("[f] to refit")
+  print("[s]->[s] to specify the regions to be used for fitting")
+  print("         the x-coordinate of the cursor location is used as boundary")
+  print("[t] to clear all the wavelength selection")
+  print("You can change other parameters from the boxes")
+
   try:
     assert sys.argv[1] in ['long1d','multi']
     if sys.argv[1] == 'long1d':

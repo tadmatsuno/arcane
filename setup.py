@@ -53,5 +53,6 @@ setup(
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
         "Operating System :: OS Independent",
+
     ],
 )
