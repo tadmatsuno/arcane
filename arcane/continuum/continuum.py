@@ -103,14 +103,20 @@ class ContinuumFit:
       else:
         raise AttributeError('{0:.s} is not implemented'.format(self.func))
       outliers = utils.sigmaclip(\
-        self.wavelength,self.flux-y_cont,\
-        self.use_flag,np.ones(len(self.wavelength)),\
+        self.wavelength,self.flux,\
+        self.use_flag,y_cont,\
         self.grow,\
         self.low_rej,self.high_rej,
         std_from_central = True) ## Fitting might not be good at the edge
-      if (np.sum(outliers)/len(outliers))>0.5:
+      if (np.sum(outliers)/len(outliers))>0.95:
+        # We are removing too many points -- probably something is wrong no sigma clipping
+        print('Warning: more than 95% of points are rejected. No further sigma-clipping is applied.')
         outliers = np.array([False]*len(self.wavelength))
         break
+      if np.sum(self.use_flag & outliers)==0:
+        # Not more points to remove
+        break
+      
     self.knotsx = spl[0]
     self.knotsy = splev(self.knotsx,spl)
     self.flx_continuum = y_cont
@@ -315,7 +321,7 @@ class MainWindow(QWidget,Ui_Dialog):
     self.flux = flux
     self.CFit.continuum(self.wavelength,self.flux)
     self.canvas.axes.set_xlim(getminmax(self.wavelength[self.CFit.use_flag]))
-    self.canvas.axes.set_ylim(getminmax(self.flux[self.CFit.use_flag]))
+    self.canvas.axes.set_ylim(0.0,getminmax(self.flux[self.CFit.use_flag])[1]*1.1)
     self.draw_fig()
     if not output is None:
       self.output = output
@@ -485,7 +491,7 @@ class MainWindow(QWidget,Ui_Dialog):
       self.canvas.pt_knots.set_xdata(self.CFit.knotsx)
       self.canvas.pt_knots.set_ydata(self.CFit.knotsy)
       self.canvas.axes.set_xlim(getminmax(self.wavelength[self.CFit.use_flag]))
-      self.canvas.axes.set_ylim(getminmax(self.flux[self.CFit.use_flag]))
+      self.canvas.axes.set_ylim(0.0,getminmax(self.flux[self.CFit.use_flag])[1]*1.1)
     _ = self.show_selected_region(self.CFit.samples)
     self.canvas.draw()
 
