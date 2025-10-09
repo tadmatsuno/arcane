@@ -129,9 +129,16 @@ class ModelBase:
                     std_from_central = self.std_from_central)
             else:
                 raise ValueError('fit_mode has to be either of ratio or subtract')
+            if np.sum(outliers) / len(outliers) > 0.95:
+                warnings.warn('More than 95% of points are rejected. No further sigma-clipping is applied.')
+                outliers = np.array([False]*len(self.wavelength))
+                break
+            if np.sum(self.use_flag & outliers) == 0:
+                # Not more points to remove
+                break
         self.yfit = yfit
         self.residual_std = np.nanstd(self.flux[self.use_flag]-self.yfit[self.use_flag])
-  
+        
 class ContinuumSpline3(ModelBase):
     def _get_npt_btw_knots(self, xx, knots):
         '''

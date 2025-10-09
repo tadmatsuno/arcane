@@ -4,10 +4,10 @@ import warnings
 from arcane.mdlatm import marcs
 import numpy as np
 from arcane.synthesis.linelist import get_atom_num
-from arcane.synthesis.readvald import convert_sigma_alpha_to_gamma,Linelist
-from arcane.utils.solarabundance import get_atomnum
-from arcane.utils import utils
-from arcane.mdlatm import marcs,avg3d
+#from arcane.synthesis.readvald import convert_sigma_alpha_to_gamma,Linelist
+#from arcane.utils.solarabundance import get_atomnum
+#from arcane.utils import utils
+from arcane.mdlatm import marcs
 import pandas
 import json
 import time
@@ -567,7 +567,7 @@ def run_turbospectrum(mode,
                     "I_X entries are prioritized over Isotope_dict inputs")
                 isotopes[isospecies] = val
             continue
-        if key not in list(ts_default_input.keys()) + list(ts_nocheck_input.keys()):
+        if key not in list(ts_default_input.keys()) + list(ts_nocheck_input.keys()) + ["AX_dict","Isotope_dict"]:
             warnings.warn(f"Input {key} is not recognized by Turbospectrum. It will be ignored.")
     
     command_ts = ""
@@ -640,7 +640,8 @@ def synth(linelist=None, run_id='', workdir='.',
     default_gamma_vw=3.,
     wmin=None, wmax=None,
     spherical = None, 
-    dwvl_step = 0.01,    
+    dwvl_step = 0.01,        
+    dwvl_margin = 2.0,
     return_cntm = False,
     **kw_args):
     """
@@ -696,8 +697,8 @@ def synth(linelist=None, run_id='', workdir='.',
     
     spherical : bool or None, optional
         If True, the model atmosphere is spherical. If None, it will be determined from the MARCS model.
-        
-    dwvl_margine : float, optional
+
+    dwvl_margin : float, optional
         The margin in wavelength for the synthesis. Default is 2.0.
         
     dwvl_step : float, optional
@@ -722,17 +723,17 @@ def synth(linelist=None, run_id='', workdir='.',
             if wmin is None or wmax is None:
                 linelist = read_linelist(l1)
                 if wmin is None:
-                    wmin = linelist['wavelength'].min()
+                    wmin = linelist['wavelength'].min() - dwvl_margin
                 if wmax is None:
-                    wmax = linelist['wavelength'].max()
+                    wmax = linelist['wavelength'].max() + dwvl_margin
     else:
         flinelist = os.path.join(workdir,f"linelist_{run_id}.lin")
         wmin_ll, wmax_ll = write_linelist(linelist, flinelist, 
             default_dampnum = default_gamma_vw)
         if wmin is None:
-            wmin = wmin_ll
+            wmin = wmin_ll - dwvl_margin
         if wmax is None:
-            wmax = wmax_ll
+            wmax = wmax_ll + dwvl_margin
     
     if ts_opac_file is None:
         ts_opac_file = os.path.join(workdir, f"ts_{run_id}.opac")

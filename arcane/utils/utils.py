@@ -195,6 +195,7 @@ def sigmaclip(xx,yy,use_flag,yfit,grow,low_rej,high_rej,
   kd_outside = KDTree(np.atleast_2d(xx[outside]).T)
   r_outside, idx_outside = kd_outside.query(np.atleast_2d(xx).T, workers=-1)
   removemask = (r_outside <= grow) | outside
+  # Keep the edge points for stability
   removemask[np.min(np.nonzero(use_flag))] = False
   removemask[np.max(np.nonzero(use_flag))] = False
   return removemask

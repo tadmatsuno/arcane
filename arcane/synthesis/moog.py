@@ -576,9 +576,9 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         dwvl_margin=dwvl_margin)
 #    print(wmin_ll,wmax_ll,wmin,wmax)
     if wmin is None:
-        wmin = wmin_ll
+        wmin = wmin_ll - dwvl_margin
     if wmax is None:
-        wmax = wmax_ll
+        wmax = wmax_ll + dwvl_margin
 #    print(wmin_ll,wmax_ll,wmin,wmax)
     if strong_lines is not None:
         write_linelist(strong_lines,fstrong_lines,
@@ -698,7 +698,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         if mode in ['synth']:
             f.write('synlimits\n')
             f.write('{0:10.3f}{1:10.3f}{2:10.3f}{3:10.3f}\n'.format(\
-                wmin-dwvl_margin,wmax+dwvl_margin,dwvl_step,dwvl_margin))
+                wmin,wmax,dwvl_step,dwvl_margin))
         if mode in ['cog','cogsyn']:
             f.write('coglimits\n')
             f.write('{0:10.3f}{1:10.3f}{2:10.3f}{3:10.3f}{4:5d}\n'.format(\
