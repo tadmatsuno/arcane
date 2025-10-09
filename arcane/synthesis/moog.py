@@ -820,4 +820,4 @@ def synth(linelist, run_id = '', workdir = '.',
                         cog_ew_minmax = cog_ew_minmax,
                         wmin = wmin, wmax = wmax,
                         **kw_args)
-    return wvl,flux
+    return wvl,1.0 - flux # as moog returns absorption strength
