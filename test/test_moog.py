@@ -17,7 +17,7 @@ class TestMoog(unittest.TestCase):
             workdir='output')
         self.assertTrue(wvl[0]<5850)
         self.assertTrue(wvl[-1]>5860)
-        self.assertAlmostEqual(1.0-flx[np.argmin(np.abs(wvl-5853.67))],0.2989,places=2)
+        self.assertAlmostEqual(flx[np.argmin(np.abs(wvl-5853.67))],0.2989,places=2)
     
     def test_moog_moogmod(self):
         valdlinelist = readvald.readvald(os.path.join(valddir,'Vald_stellar_short_hfs'))
@@ -28,7 +28,7 @@ class TestMoog(unittest.TestCase):
             workdir='output')
         self.assertTrue(wvl[0]<5850)
         self.assertTrue(wvl[-1]>5860)
-        self.assertAlmostEqual(1.0-flx[np.argmin(np.abs(wvl-5853.67))],0.2989,places=2)
+        self.assertAlmostEqual(flx[np.argmin(np.abs(wvl-5853.67))],0.2989,places=2)
 
     def test_moog_mooglin(self):
         wvl, flx = moog.synth(\
@@ -38,7 +38,7 @@ class TestMoog(unittest.TestCase):
             workdir='output')
         self.assertTrue(wvl[0]<5850)
         self.assertTrue(wvl[-1]>5860)
-        self.assertAlmostEqual(1.0-flx[np.argmin(np.abs(wvl-5853.67))],0.2989,places=2)
+        self.assertAlmostEqual(flx[np.argmin(np.abs(wvl-5853.67))],0.2989,places=2)
     
     def test_moog_marcsmod(self):
         valdlinelist = readvald.readvald(os.path.join(valddir,'Vald_stellar_short_hfs'))
@@ -49,7 +49,7 @@ class TestMoog(unittest.TestCase):
             workdir='output')
         self.assertTrue(wvl[0]<5850)
         self.assertTrue(wvl[-1]>5860)
-        self.assertAlmostEqual(1.0-flx[np.argmin(np.abs(wvl-5853.67))],0.2989,places=2)
+        self.assertAlmostEqual(flx[np.argmin(np.abs(wvl-5853.67))],0.2989,places=2)
 
     def test_moog_abundance_input1(self):
         wvl, flx = moog.synth(\
@@ -59,7 +59,7 @@ class TestMoog(unittest.TestCase):
             workdir='output',A_56=2.5)
         self.assertTrue(wvl[0]<5850)
         self.assertTrue(wvl[-1]>5860)
-        self.assertTrue(1.0-flx[np.argmin(np.abs(wvl-5853.67))]<0.2989)
+        self.assertTrue(flx[np.argmin(np.abs(wvl-5853.67))]<0.2989)
     
     def test_moog_abundance_input2(self):
         wvl, flx = moog.synth(\
@@ -69,7 +69,7 @@ class TestMoog(unittest.TestCase):
             workdir='output',AX_dict={56:2.5})
         self.assertTrue(wvl[0]<5850)
         self.assertTrue(wvl[-1]>5860)
-        self.assertTrue(1.0-flx[np.argmin(np.abs(wvl-5853.67))]<0.2989)
+        self.assertTrue(flx[np.argmin(np.abs(wvl-5853.67))]<0.2989)
 
 if __name__ == '__main__':
     unittest.main()

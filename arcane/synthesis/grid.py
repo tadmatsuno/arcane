@@ -31,13 +31,13 @@ class SpectraGrid:
             self.interpolator = RBFInterpolator(np.max(flux_diff, axis=1), self.fluxes)
     
     def __call__(self, values, depth_interp = False):
+        values = np.array(values).reshape(-1,self.ndim)
         if depth_interp:
             if not hasattr(self,'depth_interpolator'):
                 results = self.interpolator(values)
                 results[:,:] = np.nan
         else:
             results = self.interpolator(values)
-        values = np.array(values).reshape(-1,self.ndim)
         inside_grid = np.all([(b[0] <= values[:,i]) & (values[:,i] <= b[1]) for i,b in enumerate(self.bounds)],axis=0)
         if self.ndim == 1:
             values = values.ravel()
@@ -79,7 +79,7 @@ def construct_grid(fsynth, parameters_name, values,
     """
     
     if callable(grid_values):
-        grid_values = grid_values(values)
+        grid_values = np.array([grid_values(v) for v in values])
     elif grid_values is None:
         grid_values = values
 
