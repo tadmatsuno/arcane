@@ -29,7 +29,7 @@ class TestGrid(unittest.TestCase):
             workdir='output',no_line_flux_input=-90, wmin=5850, wmax=5860)
         self.assertAlmostEqual(np.max(np.abs(g1(0.3)-self.moog5603[1])), 0.0, places=3)
         self.assertAlmostEqual(self.depth, g1.input2depth(0.3), places=3)
-        self.assertAlmostEqual(np.max(np.abs(g1.depth_interpolator(self.depth)-self.moog5603[1])), 0.0, places=3)
+        self.assertAlmostEqual(np.max(np.abs(g1.depth2flux(self.depth)-self.moog5603[1])), 0.0, places=3)
         
     def test_grid2(self): 
         g1 = grid.construct_grid(moog.synth,
@@ -41,6 +41,7 @@ class TestGrid(unittest.TestCase):
             moog_mod_file=os.path.join(datadir,'model.in'),
             workdir='output', wmin=5850, wmax=5860)
         self.assertAlmostEqual(np.max(np.abs(g1(0.3)-self.moog5603[1])), 0.0, places=3)
+
 
 
         

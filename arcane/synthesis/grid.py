@@ -3,7 +3,7 @@ from scipy.interpolate import Akima1DInterpolator, RBFInterpolator
 import warnings
 
 class SpectraGrid:
-    def __init__(self, labels, input_values, fluxes, wavelength, no_line_flux = None):
+    def __init__(self, labels, input_values, fluxes, wavelength, no_line_flux = None, ews = None):
         self.labels = labels
         self.input_values = input_values
         self.fluxes = fluxes
@@ -11,25 +11,37 @@ class SpectraGrid:
         self.ndim = len(labels)
         self.bounds = [(np.min(input_values[:,i]), np.max(input_values[:,i])) for i in range(self.ndim)]
         self.no_line_flux = no_line_flux
+        self.ews = ews
         self.construct_grid()
         
     
     def construct_grid(self):
         if self.ndim == 1:
-            self.interpolator = Akima1DInterpolator(self.input_values.ravel(), self.fluxes)
+            sortidx = np.argsort(self.input_values.ravel())
+            values_in = self.input_values.ravel()[sortidx]
+            fluxes_in = self.fluxes[sortidx]
+            self.interpolator = Akima1DInterpolator(values_in, fluxes_in)
+            if self.ews is not None:
+                ews_in = self.ews[sortidx]
+                ews = np.hstack([-ews_in[::-1],0.0,ews_in])
+                fluxes = np.vstack([fluxes_in[::-1,:], self.no_line_flux, fluxes_in])
+                self.ew2flux = Akima1DInterpolator(ews, fluxes)
+                self.ew2input = Akima1DInterpolator(ews_in, values_in)
+                self.input2ew = Akima1DInterpolator(values_in, ews_in)
             if self.no_line_flux is not None:
-                flux_diff = self.no_line_flux - self.fluxes
+                flux_diff = self.no_line_flux - fluxes_in
                 depths0 = np.max(flux_diff, axis=1)
                 depths = np.hstack([-depths0[::-1],0.0,depths0])
                 minus_flux = flux_diff[::-1,:] + self.no_line_flux
-                fluxes = np.vstack([minus_flux, self.no_line_flux, self.fluxes])
-                self.depth_interpolator = Akima1DInterpolator(depths, fluxes)
-                self.depth2input = Akima1DInterpolator(depths0, self.input_values.ravel())
-                self.input2depth = Akima1DInterpolator(self.input_values.ravel(), depths0)
+                fluxes = np.vstack([minus_flux, self.no_line_flux, fluxes_in])
+                self.depth2flux = Akima1DInterpolator(depths, fluxes)
+                self.depth2input = Akima1DInterpolator(depths0, values_in)
+                self.input2depth = Akima1DInterpolator(values_in, depths0)
         else:
             warnings.warn("High-dimensional interpolation is experimental.")  
             self.interpolator = RBFInterpolator(np.max(flux_diff, axis=1), self.fluxes)
-    
+            if self.ews is not None:
+                self.input2ew = RBFInterpolator(self.input_values, self.ews)
     def __call__(self, values, depth_interp = False):
         values = np.array(values).reshape(-1,self.ndim)
         if depth_interp:
