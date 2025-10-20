@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.interpolate import Akima1DInterpolator, RBFInterpolator
 import warnings
+from multiprocessing import Pool
+from functools import partial
 
 class SpectraGrid:
     def __init__(self, labels, input_values, fluxes, wavelength, no_line_flux = None, ews = None):
@@ -56,12 +58,17 @@ class SpectraGrid:
         results[~inside_grid,:] = np.nan
         return results
             
-    
-        
+
+def _run_fsynth(args):
+    fsynth, input_dict = args
+    return fsynth(**input_dict)
+
+
 
 def construct_grid(fsynth, parameters_name, values, 
         grid_values = None, labels = None, 
         no_line_flux_input = None,
+        parallel = True,
         **kwargs):
     """
     Construct a grid of synthetic spectra by varying multiple parameters.
@@ -119,10 +126,15 @@ def construct_grid(fsynth, parameters_name, values,
     if np.ndim(values)==1:
         values = np.array(values).reshape(-1,1)
 
-    
-    inputs = [dict({name: v for v,name in zip(vv,parameters_name)}, **kwargs) for vv in values]
-    results_list = [fsynth(**inp) for inp in inputs]
-    
+    if parallel:
+        inputs = [dict({name: v for v,name in zip(vv,parameters_name)}, in_parallel = True, **kwargs) for vv in values]
+        tasks = [(fsynth, inputd) for inputd in inputs]
+        with Pool(2) as pool:
+            results_list = pool.map(_run_fsynth, tasks)
+    else:
+        results_list = [fsynth(**dict({name: v for v,name in zip(vv,parameters_name)}, in_parallel = True, **kwargs)) for vv in values]
+        
+
     for r in results_list:
         assert len(r) == 2, "fsynth should return a tuple of (wavelength, flux)"
         assert len(r[0]) == len(r[1]), "wavelength and flux should have the same length"
