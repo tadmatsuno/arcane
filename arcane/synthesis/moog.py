@@ -68,6 +68,8 @@ def set_moogsilent_path(moog_path):
         arcane_setup = json.load(open(src_path,"r"))
         arcane_setup["moog_silent"] = moog_path
         json.dump(arcane_setup,open(src_path,"w"))
+    else:
+        raise FileNotFoundError("MOOGSILENT does not exist at the specified path:{0:s}".format(moog_path))
     find_moogsilent()
 
 find_moogsilent()
