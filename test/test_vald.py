@@ -69,5 +69,18 @@ class TestVald(unittest.TestCase):
                 self.assertEqual(linelist_short[clm].values.tolist(),\
                     linelist[clm].values.tolist(),msg="all_long_hfs - all_short_hfs, "+clm)
 
+    def test_scaling(self):
+        scaled = readvald.readvald(os.path.join(valddir,'Vald_stellar_long_hfs'))
+        noscaled = readvald.readvald(os.path.join(valddir,'Vald_stellar_long_hfs_noscaling'))
+        self.assertTrue(scaled.scaled)
+        self.assertFalse(noscaled.scaled)
+        noscaled.get_scaling()
+        noscaled.apply_scaling()
+        self.assertTrue(noscaled.scaled)
+        self.assertAlmostEqual(\
+            scaled[scaled["species"]=="Ba 2"].loggf.values[0],
+            noscaled[noscaled["species"]=="Ba 2"].loggf.values[0], places=2)
+                
+
 if __name__ == '__main__':
     unittest.main()

@@ -12,6 +12,7 @@ import tempfile
 from arcane.synthesis.readvald import convert_sigma_alpha_to_gamma,Linelist
 import json
 import time
+import subprocess
 
 ## Detail see Params.f
 moog_default_input = {
@@ -159,6 +160,10 @@ def get_moog_species_id(species):
         species_id = '{0:2d}.{1:1d}'.format(atomnum,ion-1)
     return species_id
 
+def copy_if_exists(src,dst):
+    if os.path.exists(src):
+        shutil.copy(src,dst)
+    
 
 def get_moog_species_id_old(species):
     '''
@@ -443,7 +448,6 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
     dwvl_margin = 2.0,
     dwvl_step = 0.01,
     cog_ew_minmax = [-7,-4],
-    part_of_parallel = False,# I think this should be handled outside this function.
     strong_lines = None,
     **kw_args):
     '''
@@ -546,24 +550,14 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         The filename of the MOOG summary file.
     
     '''
-    if part_of_parallel:
-        cwd = os.getcwd()
-        tempdir = tempfile.mkdtemp()
-        os.chdir(tempdir)
-        flinelist = 'line.in'
-        fmodelin  = 'model.in'
-        fstdout   = 'moog.std'
-        fsummary  = 'moog.sum'
-        fstrong_lines = 'strong_lines.in'
-        flog  = 'moog.log'
-    else:
-        flinelist = os.path.join(workdir, f'line_{run_id}.in')
-        fmodelin  = os.path.join(workdir, f'model_{run_id}.in')
-        fstdout   = os.path.join(workdir, f'moog_{run_id}.std')
-        fsummary  = os.path.join(workdir, f'moog_{run_id}.sum')
-        fstrong_lines = os.path.join(workdir, f'strong_lines_{run_id}.in')
-        flog  = os.path.join(workdir, f'moog_{run_id}.log')
-    
+#    print(os.getcwd(),workdir)
+    flinelist = os.path.join(workdir,"lines.in")#os.path.join(f'line_{run_id}.in')
+    fmodelin  = os.path.join(workdir,"model.in")#os.path.join(f'model_{run_id}.in')
+    fstdout   = os.path.join(workdir,"moog.std")#os.path.join(f'moog_{run_id}.std')
+    fsummary  = os.path.join(workdir,"moog.sum")#os.path.join(f'moog_{run_id}.sum')
+    fstrong_lines = os.path.join(workdir,"strong_lines.in")
+    flog  = os.path.join(workdir,"moog.log")
+
     mdlatm = globals()[mdlatm_io]
 
 
@@ -576,9 +570,9 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         dwvl_margin=dwvl_margin)
 #    print(wmin_ll,wmax_ll,wmin,wmax)
     if wmin is None:
-        wmin = wmin_ll
+        wmin = wmin_ll - dwvl_margin
     if wmax is None:
-        wmax = wmax_ll
+        wmax = wmax_ll + dwvl_margin
 #    print(wmin_ll,wmax_ll,wmin,wmax)
     if strong_lines is not None:
         write_linelist(strong_lines,fstrong_lines,
@@ -616,7 +610,6 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
             alphafe_mod = alphafe
         if any([val is None for val in [teff, logg, feh_mod, vt]]):
             raise ValueError('At least four parameters, teff, logg, feh_mod,vt are needed')
-        #modelatm_file = f'{workdir}/model_{run_id}.mod'
         model = mdlatm.get_model(teff, logg, feh_mod, \
             alphafe=alphafe_mod, outofgrid_error=True)
         write_marcs2moog_model(fmodelin,model,vt, feh_overwrite = feh)
@@ -672,15 +665,15 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
                 'and thus will be ignored. See moog.moog_default_input for valid keys.\n'+\
                 f'If you believe {key} is a valid MOOG input parameter,'+\
                 'consider adding it to moog_default_input')
-    with open('batch.par','w') as f:
+    with open(os.path.join(workdir,'batch.par'),'w') as f:
         f.write(mode+'\n')
-        f.write('{0:20s}"{1:s}"\n'.format('standard_out',fstdout))
-        f.write('{0:20s}"{1:s}"\n'.format('summary_out',fsummary))
-        f.write('{0:20s}"{1:s}"\n'.format('model_in',fmodelin))
-        f.write('{0:20s}"{1:s}"\n'.format('lines_in',flinelist))
+        f.write('{0:20s}"{1:s}"\n'.format('standard_out',"moog.std"))
+        f.write('{0:20s}"{1:s}"\n'.format('summary_out',"moog.sum"))
+        f.write('{0:20s}"{1:s}"\n'.format('model_in',"model.in"))
+        f.write('{0:20s}"{1:s}"\n'.format('lines_in',"lines.in"))
         if not fstrong_lines is None:
             f.write('{0:20s}1\n'.format('strong'))
-            f.write('{0:20s}"{1:s}"\n'.format('stronglines_in',fstrong_lines))
+            f.write('{0:20s}"{1:s}"\n'.format('stronglines_in',"strong_lines.in"))
         for key,val in moog_default_input.items():
             if key in kw_args.keys():
                 val = kw_args[key] # Overwrite default parameter 
@@ -698,7 +691,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         if mode in ['synth']:
             f.write('synlimits\n')
             f.write('{0:10.3f}{1:10.3f}{2:10.3f}{3:10.3f}\n'.format(\
-                wmin-dwvl_margin,wmax+dwvl_margin,dwvl_step,dwvl_margin))
+                wmin,wmax,dwvl_step,dwvl_margin))
         if mode in ['cog','cogsyn']:
             f.write('coglimits\n')
             f.write('{0:10.3f}{1:10.3f}{2:10.3f}{3:10.3f}{4:5d}\n'.format(\
@@ -710,31 +703,27 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
         
 
     ## Run MOOG
-    os.system(f'{moog_path} > {flog} 2>&1')
+    with open("moog.log", "wb") as logf:
+        cwd = os.getcwd()
+        os.chdir(workdir)
+        try:
+            subprocess.run([moog_path], stdout=logf, stderr=subprocess.STDOUT, check=True)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"MOOGSILENT failed with exit code {e.returncode}. See moog.log") from e
+        finally:
+            os.chdir(cwd)
+
+    if run_id != '':            
+            shutil.copy(flinelist, os.path.join(workdir,f'linelist_{run_id}.in'))
+            shutil.copy(fmodelin, os.path.join(workdir,f'model_{run_id}.in'))
+            shutil.copy(fstdout, os.path.join(workdir,f'moog_{run_id}.std'))
+            shutil.copy(fsummary, os.path.join(workdir,f'moog_{run_id}.sum'))
+            copy_if_exists(flog, os.path.join(workdir,f'moog_{run_id}.log'))
     if mode == 'synth':
         result = read_moog_sum_synth(fsummary)
-    else:# return the filename of the summary file otherwise
-        if part_of_parallel:
-            shutil.copy(flinelist, os.path.join(cwd,f'{workdir}','linelist_{run_id}.in'))
-            shutil.copy(fmodelin, os.path.join(cwd,f'{workdir}','model_{run_id}.in'))
-            shutil.copy(fstdout, os.path.join(cwd,f'{workdir}','moog_{run_id}.std'))
-            shutil.copy(fsummary, os.path.join(cwd,f'{workdir}','moog_{run_id}.sum'))
-            shutil.copy(flog, os.path.join(cwd,f'{workdir}','moog_{run_id}.log'))
-            os.chdir(cwd)
-            flinelist = os.path.join(workdir, f'linelist_{run_id}.in')
-            fmodelin  = os.path.join(workdir, f'model_{run_id}.in')
-            fstdout   = os.path.join(workdir, f'moog_{run_id}.std')
-            fsummary  = os.path.join(workdir, f'moog_{run_id}.sum')
-            flog  = os.path.join(workdir, f'moog_{run_id}.log')
-        return fsummary # return the filename of the summary file otherwise
-    if part_of_parallel:
-        shutil.copy(flinelist, os.path.join(cwd,f'{workdir}',f'linelist_{run_id}.in'))
-        shutil.copy(fmodelin, os.path.join(cwd,f'{workdir}',f'model_{run_id}.in'))
-        shutil.copy(fstdout, os.path.join(cwd,f'{workdir}',f'moog_{run_id}.std'))
-        shutil.copy(fsummary, os.path.join(cwd,f'{workdir}',f'moog_{run_id}.sum'))
-        shutil.copy(flog, os.path.join(cwd,f'{workdir}',f'moog_{run_id}.log'))
-        os.chdir(cwd)
-    return result
+        return result
+    else:
+        return os.path.join(workdir, fsummary) # return the filename of the summary file otherwise
 
 def read_moog_sum_synth(fsummary):
     with open(fsummary,'r') as f:
@@ -766,6 +755,8 @@ def synth(linelist, run_id = '', workdir = '.',
     dwvl_margin = 2.0,
     dwvl_step = 0.01,
     cog_ew_minmax = [-7,-4],
+    in_parallel = False,
+    addtime_stamp = True,
     **kw_args):
     '''
     Run MOOG SYNTH to generate synthetic spectrum
@@ -781,13 +772,22 @@ def synth(linelist, run_id = '', workdir = '.',
         Note that for consistency, the given isotope ratio will be multiplied to the original abundance,
         i.e., which is the opposite to what is adopted in MOOG. 
 
+    If in_parallel is True, the calculation will be done in a temporary directory, and no log files will be saved.
+    This is to avoid accessing the same files in parallel runs.
+
     See also moog.run_moog for other parameters    
     '''
-    t0 = time.time()
-    tint = np.base_repr(int(t0),36)
-    t2 = int((t0 - int(t0))*1e2)
-    run_id += f"{tint:s}{t2:02d}"
-
+    if addtime_stamp:
+        t0 = time.time()
+        tint = np.base_repr(int(t0),36)
+        t2 = int((t0 - int(t0))*1e2)
+        run_id += f"{tint:s}{t2:02d}"
+    if in_parallel:
+        tempdir = tempfile.TemporaryDirectory(dir=workdir)
+        workdir = tempdir.name
+        run_id = ""
+#        warnings.warn('run_id is ignored when in_parallel is True. The calculation will be done in a temporary directory, and no log files will be saved.')
+    #print(f'Running MOOG synth in {workdir}')
     if isinstance(linelist,(dict,pandas.DataFrame)): 
         # Create linelist if it is not a filename        
         if type(linelist) is pandas.DataFrame: 
@@ -820,4 +820,7 @@ def synth(linelist, run_id = '', workdir = '.',
                         cog_ew_minmax = cog_ew_minmax,
                         wmin = wmin, wmax = wmax,
                         **kw_args)
-    return wvl,flux
+    if in_parallel:
+#        print(workdir, os.path.exists(workdir))
+        tempdir.cleanup()
+    return wvl,1.0 - flux # as moog returns absorption strength

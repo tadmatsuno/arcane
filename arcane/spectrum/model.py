@@ -129,9 +129,16 @@ class ModelBase:
                     std_from_central = self.std_from_central)
             else:
                 raise ValueError('fit_mode has to be either of ratio or subtract')
+            if np.sum(outliers) / len(outliers) > 0.95:
+                warnings.warn('More than 95% of points are rejected. No further sigma-clipping is applied.')
+                outliers = np.array([False]*len(self.wavelength))
+                break
+            if np.sum(self.use_flag & outliers) == 0:
+                # Not more points to remove
+                break
         self.yfit = yfit
         self.residual_std = np.nanstd(self.flux[self.use_flag]-self.yfit[self.use_flag])
-  
+        
 class ContinuumSpline3(ModelBase):
     def _get_npt_btw_knots(self, xx, knots):
         '''
@@ -683,7 +690,7 @@ class LineSynth1param(ModelBase):
                           'bounds_main':(None,None), 
                           'bounds_vfwhm':(0.0,15.0),
                           "bounds_vshift":(-10,10),
-                          'xatol':0.01}
+                          'xatol':3e-4}
 
     def evaluate(self,xx , force_recompute = False):
         if force_recompute or (self.grid_size == 0.0):
@@ -940,9 +947,14 @@ class ContinuumAbsorptionModel:
         if self.model_continuum is None:
             self.model_absorption.fit(xx,1.0-yy)
         else:
+            old_value = np.inf
             for ii in range(self.niterate):
                 #print(f'{ii+1} iteration')
                 self.model_continuum.fit(xx, yy / (1.0-self.model_absorption.evaluate(xx)))
                 self.model_absorption.fit(xx,1.0 - yy/self.model_continuum.evaluate(xx))
                 if debug:
                     print(f'{ii}th guess: {self.model_absorption.synth_parameters[self.model_absorption.update_synth_parameter]:.3f}')
+                new_value = self.model_absorption.synth_parameters[self.model_absorption.update_synth_parameter]
+                if np.abs(new_value - old_value) < self.model_absorption.fit_control['xatol']:
+                    break
+                old_value = new_value

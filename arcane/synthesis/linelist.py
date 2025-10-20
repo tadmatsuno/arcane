@@ -11,7 +11,7 @@ import warnings
 # Everything in readvald should eventually be moved to this file for better organization.
 # This is a temporary solution
 # MOOG species id function should also utilize the functions currently in readvald 
-from .readvald import * 
+#from .readvald import * 
 
 def get_atom_num(species_id):
     """
@@ -174,3 +174,75 @@ def create_moog_species_id(atoms, ion, isos=None):
     return f"{atom_str}.{ion}{iso_str}"
 
 
+class Linelist(pandas.DataFrame):
+    '''
+    Class to store a linelist. It currently supports VALD formats
+    '''
+    def __init__(self, *args, scaled = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.scaled = scaled
+           
+    def get_scaling(self):
+        '''
+        Get corrections for log-gf values for isotopes
+        '''
+        self["isotope_correction"] = 0.0
+        
+        for ii in range(5):
+            self[f"fraction{ii+1}"] = 1.0
+            za_unique = np.unique(self[[f"Z{ii+1}",f"A{ii+1}"]].values, axis=0)
+            for za in za_unique:
+                zz, aa = za
+                mask = (self[f"Z{ii+1}"]==zz)&(self[f"A{ii+1}"]==aa)
+                if aa == 0:
+                    continue
+                iso_fraction = getisotope(zz,aa)
+                self.loc[mask,"isotope_correction"] += np.log10(iso_fraction)
+                self.loc[mask,f"fraction{ii+1}"] = iso_fraction
+                
+    def modify_scaling(self, zz, amass_frac_dict):
+        assert "isotope_correction" in self.columns, \
+            "isotope_correction column not found. Call get_scaling first"
+        frac_sum = np.sum(list(amass_frac_dict.values()))
+        print(frac_sum)
+        for key in amass_frac_dict.keys():
+            amass_frac_dict[key] /= frac_sum
+
+        for ii in range(5):
+            mask = self[f"Z{ii+1}"]==zz
+            if np.sum(mask) == 0:
+                continue
+            aa_unique = np.unique(self.loc[mask,f"A{ii+1}"].values)
+            for aa in aa_unique:
+                if aa == 0:
+                    continue
+                mask2 = (self[f"Z{ii+1}"]==zz)&(self[f"A{ii+1}"]==aa)
+                if aa in amass_frac_dict.keys():
+                    new_frac = amass_frac_dict[aa]
+                else:
+                    new_frac = 1e-99
+                    print(f"Atomic mass {aa} not found in amass_frac_dict. Assuming that it doesn't exist")
+                frac_original = np.unique(self[f"fraction{ii+1}"].values[mask2])
+                if len(frac_original) != 1:
+                    print("Warning: more than one fraction found for the same isotope")
+                delta_frac = new_frac / frac_original
+                self.loc[mask2,"isotope_correction"] += np.log10(delta_frac)
+                self.loc[mask2,f"fraction{ii+1}"] = new_frac
+
+    def apply_scaling(self):
+        if self.scaled and "loggf_unscaled" in self.columns:
+            print("Linelist is already scaled but unscaled loggf is available.")
+            print("Overwriting the loggf values")
+            self.loc[:,"loggf"] = self["loggf_unscaled"] + self["isotope_correction"]
+            self.scaled = True
+            return
+        elif self.scaled:
+            raise ValueError("Linelist is already scaled and no unscaled loggf is available")
+        elif "isotope_correction" not in self.columns:
+            raise ValueError("Linelist is not scaled and no isotope_correction column found"+\
+                             "Please call get_scaling first")
+        else:
+            self.loc[:,"loggf_unscaled"] = self.loc[:,"loggf"].values
+            self.loc[:,"loggf"] = self["loggf_unscaled"] + self["isotope_correction"]
+            self.scaled = True
+            return       
