@@ -1,5 +1,6 @@
 import shutil
 import os
+import tempfile
 import warnings
 from arcane.mdlatm import marcs
 import numpy as np
@@ -11,6 +12,7 @@ from arcane.mdlatm import marcs
 import pandas
 import json
 import time
+import subprocess
 
 ts_default_input = {# Combination of the input name for the python interface, that for turbospectrum input, and the default value
     "INTENSITY_FLUX":('INTENSITY/FLUX','Flux'),
@@ -570,53 +572,67 @@ def run_turbospectrum(mode,
         if key not in list(ts_default_input.keys()) + list(ts_nocheck_input.keys()) + ["AX_dict","Isotope_dict"]:
             warnings.warn(f"Input {key} is not recognized by Turbospectrum. It will be ignored.")
     
-    command_ts = ""
-    if mode == 'babsma':
-        command_ts += babsma_path
-    elif mode == 'syn':
-        command_ts += bsyn_path
-    command_ts += " > " + flog + " 2>&1 << EOF\n"
-    
+#    ts_input = ""
+#    if mode == 'babsma':
+#        ts_input += babsma_path
+#    elif mode == 'syn':
+#        ts_input += bsyn_path
+#    ts_input += " > " + flog + " 2>&1 << EOF\n"
+ 
+    ts_input_str = ""   
     # all the inputs in ts_input dictionary
     for key in ts_input.keys():
-        command_ts += f"'{key}:' '{ts_input_format(ts_input[key])}'\n"
+        ts_input_str += f"'{key}:' '{ts_input_format(ts_input[key])}'\n"
     if len(abundances) > 0:
-        command_ts += f"'INDIVIDUAL ABUNDANCES:' '{ts_input_format(len(abundances))}'\n"
+        ts_input_str += f"'INDIVIDUAL ABUNDANCES:' '{ts_input_format(len(abundances))}'\n"
         for atomnum, abundance in abundances.items():
-            command_ts += f"{atomnum} {abundance}\n"
+            ts_input_str += f"{atomnum} {abundance}\n"
     if len(isotopes) > 0:
-        command_ts += f"'ISOTOPES:' '{ts_input_format(len(isotopes))}'\n"
+        ts_input_str += f"'ISOTOPES:' '{ts_input_format(len(isotopes))}'\n"
         for isospecies, abundance in isotopes.items():
-            command_ts += f"{isospecies} {abundance}\n"
-            
-        
+            ts_input_str += f"{isospecies} {abundance}\n"
+
+
     # babsma inputs
     if mode == "babsma":
-        command_ts += f"'MODELINPUT:' '{fmodelin}'\n"+\
+        ts_input_str += f"'MODELINPUT:' '{fmodelin}'\n"+\
             f"'MODELOPAC:' '{ts_opac_file}'\n"+\
             f"'XIFIX: '{ts_input_format(True)}'\n"+\
             f"{vt}\n"
     # bsyn inputs
     if mode == "syn":
-        command_ts += f"'MODELOPAC:' '{ts_opac_file}'\n"+\
+        ts_input_str += f"'MODELOPAC:' '{ts_opac_file}'\n"+\
             f"'RESULTFILE:' '{fresult}'\n"
         flinelist = np.atleast_1d(flinelist)
-        command_ts += f"'NFILES  :'    '{len(flinelist)}'\n"
+        ts_input_str += f"'NFILES  :'    '{len(flinelist)}'\n"
         #command_ts += flinelist+'\n'
         for fl in flinelist:
-            command_ts += fl+'\n'
-        command_ts += f"'SPHERICAL:'    '{ts_input_format(spherical)}'\n"
-        command_ts += '  30\n  300.00\n  15\n  1.30\n'
-    command_ts += "EOF" 
+            ts_input_str += fl+'\n'
+        ts_input_str += f"'SPHERICAL:'    '{ts_input_format(spherical)}'\n"
+        ts_input_str += '  30\n  300.00\n  15\n  1.30\n'
+    ts_input_str += "EOF"
 
     with open(fcommand, 'w') as f:
-        f.write(command_ts)
-    os.chdir(workdir)
-    if not os.path.exists("DATA"):
-        os.symlink(DATA_path, "DATA")
-    os.system(command_ts)
-    os.chdir(cwd)
-    
+        f.write(ts_input_str)
+
+    with open(flog, "wb") as logf:
+        cwd = os.getcwd()
+        os.chdir(workdir)
+        if not os.path.exists("DATA"):
+            os.symlink(DATA_path, "DATA")
+        if mode == 'babsma':
+            command = [babsma_path]
+        elif mode == 'syn':
+            command = [bsyn_path]
+        else:
+            raise ValueError('mode should be babsma or syn')
+        try:
+            p = subprocess.run(command, input=ts_input_str.encode(), stdout=logf, stderr=subprocess.STDOUT, check=True)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Turbospectrum failed with return code {e.returncode}. Check the log file {flog} for details.")
+        finally:
+            os.chdir(cwd)
+   
     result_dict = {}
     if mode == 'babsma':
         result_dict["model"] = fmodelin
@@ -643,6 +659,8 @@ def synth(linelist=None, run_id='', workdir='.',
     dwvl_step = 0.01,        
     dwvl_margin = 2.0,
     return_cntm = False,
+    in_parallel = False,
+    addtime_stamp = True,
     **kw_args):
     """
     Synthesize a spectrum using Turbospectrum.
@@ -706,11 +724,16 @@ def synth(linelist=None, run_id='', workdir='.',
     **kw_args : dict, optional
         Additional keyword arguments to be passed to the run_turbospectrum function.
     """
-       
-    t0 = time.time()
-    tint = np.base_repr(int(t0),36)
-    t2 = int((t0 - int(t0))*1e2)
-    run_id += f"{tint:s}{t2:02d}"
+    
+    if addtime_stamp:        
+        t0 = time.time()
+        tint = np.base_repr(int(t0),36)
+        t2 = int((t0 - int(t0))*1e2)
+        run_id += f"{tint:s}{t2:02d}"
+    if in_parallel:
+        tempdir = tempfile.TemporaryDirectory(dir=workdir)
+        workdir = tempdir.name
+        run_id = ""
     if isinstance(linelist,str) or \
         (isinstance(linelist, list) and (isinstance(linelist[0], str))):
         flinelist = linelist
@@ -762,6 +785,8 @@ def synth(linelist=None, run_id='', workdir='.',
         wmin = wmin, wmax = wmax,
         **kw_args)
     wvl, flx, cntm = np.loadtxt(result_syn["result_file"]).T
+    if in_parallel:
+        tempdir.cleanup()
     if return_cntm:
         return wvl, flx, cntm
     else:
