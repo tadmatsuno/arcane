@@ -44,19 +44,25 @@ class SpectraGrid:
             self.interpolator = RBFInterpolator(np.max(flux_diff, axis=1), self.fluxes)
             if self.ews is not None:
                 self.input2ew = RBFInterpolator(self.input_values, self.ews)
+    
     def __call__(self, values, depth_interp = False):
         values = np.array(values).reshape(-1,self.ndim)
-        if depth_interp:
-            if not hasattr(self,'depth_interpolator'):
-                results = self.interpolator(values)
-                results[:,:] = np.nan
-        else:
-            results = self.interpolator(values)
-        inside_grid = np.all([(b[0] <= values[:,i]) & (values[:,i] <= b[1]) for i,b in enumerate(self.bounds)],axis=0)
         if self.ndim == 1:
             values = values.ravel()
+            inside_grid = (self.bounds[0][0] <= values) & (values <= self.bounds[0][1])
+        else:
+            inside_grid = np.all([(b[0] <= values[:,i]) & (values[:,i] <= b[1]) for i,b in enumerate(self.bounds)],axis=0)
+        if depth_interp:
+            raise ValueError("Not implemented yet")
+            if not hasattr(self,'depth_interpolator'):
+                results = self.interpolator(values)
+                results[:,:] = np.nan    
+        else:
+            results = self.interpolator(values)
         results[~inside_grid,:] = np.nan
-        return results
+        if (self.ndim == 1) and (len(values)==1):
+            results = results[0]
+        return self.wavelength,results
             
 
 def _run_fsynth(args):
