@@ -18,6 +18,13 @@ def fsynth_test(aheight):
 class TestLineFitting(unittest.TestCase):
     valdlinelist = readvald.readvald(os.path.join(valddir,'Vald_stellar_short_hfs'))
     sun = iofiles.readspip(os.path.join(datadir, "sun.text"))
+    g1 = grid.construct_grid(moog.synth,
+        "A_56",
+        np.arange(1.5,3.0,0.2),
+        linelist = valdlinelist,
+        moog_mod_file = os.path.join(datadir,'model.in'),
+        workdir='output',no_line_flux_input=-90, wmin=5850, wmax=5860, parallel = True)
+    fcontinuum = lambda self,x: 1.0 + (x - 5853.7)*0.05
 
     def test_simple_heigt(self):
         mock_obs_wvl = np.arange(-1.5,1.5,0.02) + 5000.13
@@ -100,18 +107,11 @@ class TestLineFitting(unittest.TestCase):
         self.assertAlmostEqual(res.model_parameters['A_56'],2.238,places=2)
 
     def test_fitting_grid(self):        
-
-        g1 = grid.construct_grid(moog.synth,
-            "A_56",
-            np.arange(0.0,3.0,0.2),
-            linelist = self.valdlinelist,
-            moog_mod_file = os.path.join(datadir,'model.in'),
-            workdir='output',no_line_flux_input=-90, wmin=5850, wmax=5860, parallel = True)
         wvl_sun = self.sun['wvl'].values
         flx_sun = self.sun['flx'].values
         mask = (wvl_sun>5853.4)&(wvl_sun<5854.0)
         model_grid = model.LineSynth(
-            g1,
+            self.g1,
             synth_parameters={
                 "values":2.5
             },
@@ -121,6 +121,49 @@ class TestLineFitting(unittest.TestCase):
         self.assertAlmostEqual(res.model_parameters['values'],2.238,places=2)
         self.assertAlmostEqual(res.model_parameters['rv'],0.155,places=2)
         self.assertAlmostEqual(res.model_parameters['vFWHM'],3.661,places=2)
+
+    def test_fitting_grid_depth(self):        
+        wvl_sun = self.sun['wvl'].values
+        flx_sun = self.sun['flx'].values
+        mask = (wvl_sun>5853.4)&(wvl_sun<5854.0)
+        model_grid = model.LineSynth(
+            self.g1,
+            synth_parameters={
+                "values":0.1,
+                "xaxis":"depth"
+            },
+            parameters_to_fit=["values","rv","vFWHM"],
+        )
+        res = model_grid.fit(wvl_sun[mask], flx_sun[mask])
+        self.assertAlmostEqual(res.model_parameters['values'],0.628,places=2)
+        self.assertAlmostEqual(res.model_parameters['rv'],0.155,places=2)
+        self.assertAlmostEqual(res.model_parameters['vFWHM'],3.661,places=2)
+
+    def test_fitting_grid_continuum(self):        
+        wvl_sun = self.sun['wvl'].values
+        flx_sun = self.sun['flx'].values
+        mask = (wvl_sun>5853)&(wvl_sun<5854.4)
+        model_line = model.LineSynth(
+            self.g1,
+            synth_parameters={
+                "values":2.5
+            },
+            parameters_to_fit=["values","rv","vFWHM"],
+            samples = [5853.55, 5853.85]
+        )
+        model_continuum = model.ContinuumPolynomial(
+            order=1,
+            samples = [[5853.0, 5853.4],[5853.9, 5854.4]]
+            )
+        model_composite = model.LineSynthContinuum(\
+            model_line,
+            model_continuum
+        )
+        res = model_composite.fit(wvl_sun[mask], flx_sun[mask]*self.fcontinuum(wvl_sun[mask]))
+        self.assertAlmostEqual(res['values'],2.241,places=2)
+        self.assertAlmostEqual(res['rv'],0.155,places=2)
+        self.assertAlmostEqual(res['vFWHM'],3.671,places=2)
+
 
 if __name__ == '__main__':
     np.random.seed(0)

@@ -710,7 +710,9 @@ class LineSynth(ModelBase):
         rv_in = 0.0,
         niterate = 10, low_rej = 3., high_rej = 5., grow = 0.05,
         naverage = 1, fit_mode = 'subtract',
-        samples = [], std_from_central = False):
+        samples = [], std_from_central = False,
+        continuum_model = None
+        ):
         '''
         This class is to fit a synthetic spectrum to an observed spectrum
         If only one parameter, excluding vFWHM, is to be fit, use LineSynth1param,
@@ -769,7 +771,81 @@ class LineSynth(ModelBase):
         for key in parameters_to_fit:
             assert key in self.model_parameters.keys(), f'{key} must be vFWHM, "rv" or included in synth_parameters'
         self.parameters_to_fit = parameters_to_fit
+        self.fitting_result = None
+        
 
+class LineSynthContinuum:
+    def __init__(self, 
+        LineSynth_model,
+        Continuum_model):
+        '''
+        A composite model of LineSynth and Continuum model.
+        It adjust the continuum each time the LineSynth model is updated.
+        '''
+        self.linesynth_model = LineSynth_model
+        self.continuum_model = Continuum_model
+        
+    def evaluate(self, xx, dummy):
+        yline = self.linesynth_model.evaluate(xx, self.linesynth_model.model_parameters)
+        ycont = self.continuum_model.evaluate(xx, self.continuum_model.model_parameters)
+        return yline * ycont
+    
+    def update(self, xx, yy, yerr = None, fitting_parameters = {}):
+        for key in self.linesynth_model.fitting_parameters_default.keys():
+            if key not in fitting_parameters.keys():
+                fitting_parameters[key] = self.linesynth_model.fitting_parameters_default[key]
+        if "diff_step" not in fitting_parameters["curve_fit_kwargs"].keys():
+            fitting_parameters["curve_fit_kwargs"]["diff_step"] = fitting_parameters["diff_step"]
+        x0 = []
+        bounds = []
+        for key in self.linesynth_model.parameters_to_fit:
+            if key.startswith('I_'): # Isotope
+                x0.append(np.log10(self.linesynth_model.model_parameters[key]))
+            else: # rv, vFWHM, or abundances
+                x0.append(self.linesynth_model.model_parameters[key])
+            
+            if key in fitting_parameters['scaling'].keys():
+                scale = fitting_parameters['scaling'][key]
+            else:
+                scale = 1.0
+            if key in fitting_parameters['bounds'].keys():
+                bounds.append( \
+                    (fitting_parameters['bounds'][key][0],\
+                     fitting_parameters['bounds'][key][1]) 
+                )
+            elif key == "vFWHM":
+                bounds.append( (0.0,np.inf) )
+            else:
+                bounds.append( (-np.inf,np.inf) )                
+        model_parameters = self.linesynth_model.model_parameters.copy()
+        def f_fit(wvl,*xi):
+            for x,key in zip(xi,self.linesynth_model.parameters_to_fit):
+                if key.startswith('I_'):# Isotope
+                    model_parameters[key] = 10.**x
+                else:# rv, vFWHM, or abundances
+                    model_parameters[key] = x
+            # get the line synthesis
+            yfit = self.linesynth_model.evaluate(wvl, model_parameters)
+            # update the continuum
+            res = self.continuum_model.fit(wvl, yy / yfit)
+            ycontinuum = self.continuum_model.evaluate(wvl, res.model_parameters)
+            return yfit * ycontinuum
+        res = curve_fit(f_fit, xx, yy, p0 = x0, sigma = yerr, 
+            bounds = np.array(bounds).T, 
+            method = 'trf',
+            **fitting_parameters.get("curve_fit_kwargs", {}))
+        self.linesynth_model.fitting_result = res
+        self.linesynth_model.model_parameters = model_parameters
+        return model_parameters
+    
+    def __call__(self, wavelength):
+        return self.evaluate(wavelength, 0) # 0 is dummy
+
+    def fit(self, wavelength, flux):
+        return self.update(wavelength, flux)
+
+
+        
 
 ###def _fsynth4parallel(dict_synth_tmp,fsynth):
 ###    wvl,flux = fsynth(**dict_synth_tmp)

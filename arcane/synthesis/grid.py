@@ -45,21 +45,30 @@ class SpectraGrid:
             if self.ews is not None:
                 self.input2ew = RBFInterpolator(self.input_values, self.ews)
     
-    def __call__(self, values, depth_interp = False):
+    def __call__(self, values, xaxis = "values"):
         values = np.array(values).reshape(-1,self.ndim)
         if self.ndim == 1:
             values = values.ravel()
             inside_grid = (self.bounds[0][0] <= values) & (values <= self.bounds[0][1])
         else:
             inside_grid = np.all([(b[0] <= values[:,i]) & (values[:,i] <= b[1]) for i,b in enumerate(self.bounds)],axis=0)
-        if depth_interp:
-            raise ValueError("Not implemented yet")
-            if not hasattr(self,'depth_interpolator'):
+        if xaxis == "depth":
+            if not hasattr(self,'depth2flux'):
                 results = self.interpolator(values)
                 results[:,:] = np.nan    
-        else:
+            else:
+                results = self.depth2flux(values)
+        elif xaxis == "ew":
+            if not hasattr(self,'ew2flux'):
+                results = self.interpolator(values)
+                results[:,:] = np.nan    
+            else:
+                results = self.ew2flux(values)
+        elif xaxis == "values":
             results = self.interpolator(values)
-        results[~inside_grid,:] = np.nan
+            results[~inside_grid,:] = np.nan
+        else:
+            raise ValueError("xaxis should be 'values', 'ew' or 'depth'")
         if (self.ndim == 1) and (len(values)==1):
             results = results[0]
         return self.wavelength,results
