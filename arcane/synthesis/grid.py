@@ -25,20 +25,31 @@ class SpectraGrid:
             self.interpolator = Akima1DInterpolator(values_in, fluxes_in)
             if self.ews is not None:
                 ews_in = self.ews[sortidx]
-                ews = np.hstack([-ews_in[::-1],0.0,ews_in])
-                fluxes = np.vstack([fluxes_in[::-1,:], self.no_line_flux, fluxes_in])
+                sortidx2 = np.argsort(ews_in)
+                unique_ew, index_unique_ew = np.unique(ews_in, return_index=True)
+                flux_in_ew = fluxes_in[sortidx2][index_unique_ew]
+                ews = np.hstack([-unique_ew[::-1],0.0,unique_ew])
+                fluxes = np.vstack([flux_in_ew[::-1,:], self.no_line_flux, flux_in_ew])
                 self.ew2flux = Akima1DInterpolator(ews, fluxes)
                 self.ew2input = Akima1DInterpolator(ews_in, values_in)
                 self.input2ew = Akima1DInterpolator(values_in, ews_in)
             if self.no_line_flux is not None:
                 flux_diff = self.no_line_flux - fluxes_in
                 depths0 = np.max(flux_diff, axis=1)
+                # I need to make sure depths0 is strictly increasing for Akima1DInterpolator
+                # Cut out decreasing parts
+                increasing_idx = np.nonzero(np.diff(depths0) > 0)[0] + 1
+                increasing_idx = np.hstack([0, increasing_idx])
+                depths0 = depths0[increasing_idx]
+                values_in_depth = values_in[increasing_idx]
+                fluxdiff_in_depth = flux_diff[increasing_idx]
+                
                 depths = np.hstack([-depths0[::-1],0.0,depths0])
-                minus_flux = flux_diff[::-1,:] + self.no_line_flux
-                fluxes = np.vstack([minus_flux, self.no_line_flux, fluxes_in])
+                minus_flux = fluxdiff_in_depth[::-1,:] + self.no_line_flux
+                fluxes = np.vstack([minus_flux, self.no_line_flux, self.no_line_flux - fluxdiff_in_depth])
                 self.depth2flux = Akima1DInterpolator(depths, fluxes)
-                self.depth2input = Akima1DInterpolator(depths0, values_in)
-                self.input2depth = Akima1DInterpolator(values_in, depths0)
+                self.depth2input = Akima1DInterpolator(depths0, values_in_depth)
+                self.input2depth = Akima1DInterpolator(values_in_depth, depths0)
         else:
             warnings.warn("High-dimensional interpolation is experimental.")  
             self.interpolator = RBFInterpolator(np.max(flux_diff, axis=1), self.fluxes)
