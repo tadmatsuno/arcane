@@ -39,14 +39,17 @@ class SpectraGrid:
                 # I need to make sure depths0 is strictly increasing for Akima1DInterpolator
                 # Cut out decreasing parts
                 increasing_idx = np.nonzero(np.diff(depths0) > 0)[0] + 1
-                increasing_idx = np.hstack([0, increasing_idx])
+                increasing_idx = np.hstack([0, increasing_idx]) 
+                increasing_idx = increasing_idx[depths0[increasing_idx]>0]
+#                print(depths0)
                 depths0 = depths0[increasing_idx]
+#                print(depths0)
                 values_in_depth = values_in[increasing_idx]
-                fluxdiff_in_depth = flux_diff[increasing_idx]
-                
+                fluxdiff_in_depth = flux_diff[increasing_idx]                
                 depths = np.hstack([-depths0[::-1],0.0,depths0])
                 minus_flux = fluxdiff_in_depth[::-1,:] + self.no_line_flux
                 fluxes = np.vstack([minus_flux, self.no_line_flux, self.no_line_flux - fluxdiff_in_depth])
+#                print(depths)
                 self.depth2flux = Akima1DInterpolator(depths, fluxes)
                 self.depth2input = Akima1DInterpolator(depths0, values_in_depth)
                 self.input2depth = Akima1DInterpolator(values_in_depth, depths0)

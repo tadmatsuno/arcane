@@ -9,12 +9,24 @@ from astropy.constants import c
 import multiprocessing as mp
 from functools import partial
 from dataclasses import dataclass
+import functools
 ckm = c.to('km/s').value
 
 def _fit4parallel(_model,fparam,xx,yy):
     model = copy.deepcopy(_model)
     model.fit(xx,yy)
     return fparam(model)
+
+def validate(init):
+    '''
+    This decorator makes sure that each ModelBase subclass implements
+    func_model, func_residual, or update methods.
+    '''
+    @functools.wraps(init)
+    def wrapper(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        self._validate()  # defined on Base
+    return wrapper
 
 @dataclass
 class FittingResults:
@@ -26,25 +38,31 @@ class FittingResults:
     flux_fit : np.ndarray
     model_parameters : dict
     std_residual : float
+    optimization_output : any = None
+    optimization_output_sub : any = None
     
 class ModelBase:
-    def __init__(self, fbase, fupdate,
+    def __init__(self, 
         niterate = 10, low_rej = 3., high_rej= 5., grow = 0.05, 
         naverage = 1, fit_mode = 'subtract',
         samples = [], std_from_central = False):
         '''
         Base class for model spectra, which could be a continuum, 
         (an) absorption line(s), synthetic spectra
-        fbase is a function that synthesize a model spectrum that takes wavelength as an argument
-        fupdate is a function that searches for best-fit parameters
         
-        fbase function must take the following arguments:
+        It needs to have an evaluate method that takes the following arguments:       
         - wavelength : array
         - model_parameters : dict containing model parameters
-        fupdate function must take the following arguments:
-        - wavelength : array
-        - flux : array
-        and updates self.model_parameters attribute by minizing the chi-square.
+        One of the following methods also need to be implemented:
+        - func_model : function
+            A function that takes wavelength and model parameters as input
+            and returns the model flux.
+            This function is used in the fitting procedure.
+        - func_residual : function
+            A function that takes wavelength, flux, and model parameters as input
+            and returns the residual between model and data.
+        - update : function
+            A function that takes wavelength and flux as input and update model_parameters.
         Note that not all parameters in self.model_parameters need to be updated. 
         There should be some parameters that control which parameters are updated.
         
@@ -52,8 +70,6 @@ class ModelBase:
         The fit function of this class performs fitting together with sigma-clipping.
         Once fitting is conducted, wavelength and flux of the data are stored as attributes.
         '''
-        self.fbase = fbase
-        self.fupdate = fupdate
         self.niterate = niterate
         self.low_rej = low_rej
         self.high_rej = high_rej
@@ -62,9 +78,51 @@ class ModelBase:
         self.samples = samples
         self.fit_mode = fit_mode
         self.std_from_central = std_from_central
-    
-    def __call__(self, wavelength):
-        return self.fbase(wavelength,self.model_parameters)
+
+    def __init_subclass__(self, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        # Only wrap if subclass defines its own __init__
+        init = self.__dict__.get("__init__")
+        if init is not None:
+            self.__init__ = validate(init)
+
+    def _validate(self):
+        '''
+        Validate that the subclass has implemented required methods.
+        '''
+        if not hasattr(self, "evaluate"):
+            raise NotImplementedError("evaluate method must be implemented in the subclass.")
+        elif not callable(self.evaluate):
+            raise NotImplementedError("evaluate method must be callable.")
+        
+        if hasattr(self, "func_model"):
+            if not callable(self.func_model):
+                raise ValueError("func_model should be a callable function.")
+            if not hasattr(self, "x0_default"):
+                raise ValueError("x0_default attribute must be defined when func_model is implemented.")
+            if not hasattr(self, "bounds_default"):
+                raise ValueError("bounds_default attribute must be defined when func_model is implemented.")
+            if not hasattr(self, "scales"):
+                raise ValueError("scales attribute must be defined when func_model is implemented.")
+        elif hasattr(self, "func_residual"):
+            if not callable(self.func_residual):
+                raise ValueError("func_residual should be a callable function.")
+            if not hasattr(self, "x0_default"):
+                raise ValueError("x0_default attribute must be defined when func_residual is implemented.")
+            if not hasattr(self, "bounds_default"):
+                raise ValueError("bounds_default attribute must be defined when func_residual is implemented.")
+        elif hasattr(self, "update"):
+            if not callable(self.update):
+                raise ValueError("update should be a callable function.")
+        else:
+            raise NotImplementedError("Either func_model, func_residual, or update method must be implemented in the subclass.")
+                
+    def __call__(self, wavelength, continuum_model = None):
+        if continuum_model is not None:
+            return self.evaluate(wavelength,self.model_parameters) * continuum_model(wavelength)
+        else:
+            return self.evaluate(wavelength,self.model_parameters)
 
     def uncertainty(self, fparameter, std, nmc=100, iid = True, parallel = False):
         '''
@@ -125,7 +183,7 @@ class ModelBase:
         self = copy.deepcopy(model0)
         return mc_result
 
-    def fit(self, wavelength, flux):
+    def fit(self, wavelength, flux, continuum_model = None, optimization_parameter = {}):
         '''
         Fit the model to the data with sigma-clipping.
         Parameters
@@ -138,17 +196,63 @@ class ModelBase:
         -------
         FittingResults dataclass
         '''
-            
-#        self.wavelength, self.flux = \
-#            utils.average_nbins(self.naverage, wavelength, flux)
+        
+        if continuum_model is not None and not hasattr(self, "func_model"):
+            warnings.warn("continuum_model will not be updated unless func_model is used")
         wvl, flx = utils.average_nbins(self.naverage, wavelength, flux)
         use_flag = utils.get_region_mask(wvl, self.samples) & (np.isfinite(flx))
         outliers = np.array([False]*len(wvl))
         for _ in range(self.niterate):
             use_flag = use_flag & (~outliers)
-            model_parameters = self.fupdate(
-                wvl[use_flag], flx[use_flag])
-            yfit = self.fbase(wvl, model_parameters)
+            # Try curve_fit -> minimize -> self.update
+            if hasattr(self, "func_model"):
+                p0 = self.x0_default
+                bounds = self.bounds_default
+                x_scale = self.scales if self.scales is not None else np.ones(len(p0))
+                if continuum_model is not None:
+                    def func_model(wvl, *xi):
+                        youter = self.func_model(wavelength,*xi)
+                        continuum_result = continuum_model.fit(wavelength, flux / youter)
+                        ycontinuum = continuum_model(wvl)
+                        return self.func_model(wvl, *xi) * ycontinuum
+                else:                       
+                    func_model = self.func_model
+                opt_out = curve_fit(
+                    func_model,
+                    wvl[use_flag],
+                    flx[use_flag],
+                    p0 = p0,
+                    bounds = bounds,
+                    x_scale = x_scale,
+                    method = "trf",
+                    **optimization_parameter
+                )
+                _ = self.func_model(wvl[use_flag], *opt_out[0])
+            elif hasattr(self, "func_residual"):
+                p0 = self.x0_default
+                bounds = self.bounds_default
+                flx_in = flx[use_flag]
+                if continuum_model is not None:
+                    flx_in /= continuum_model(wvl[use_flag])
+                opt_out = minimize(
+                    lambda x: np.sum(
+                    self.func_residual(wvl[use_flag], flx_in, x)**2),
+                    self.x0_default,
+                    method = "Nelder-Mead",
+                    bounds = Bounds(*bounds),
+                    **optimization_parameter
+                )
+                _ = self.func_residual(wvl[use_flag], flx_in, opt_out.x)
+                yfit = self(wvl, continuum_model = continuum_model)
+            else:
+                flx_in = flx[use_flag]
+                if continuum_model is not None:
+                    flx_in /= continuum_model(wvl[use_flag])
+                model_parameters, opt_out = self.update(
+                    wvl[use_flag], flx_in)
+            
+            yfit = self(wvl, continuum_model = continuum_model)
+            model_parameters = self.model_parameters.copy()
             if self.fit_mode == 'subtract':
                 outliers = utils.sigmaclip(
                     wvl, flx,
@@ -163,8 +267,9 @@ class ModelBase:
                     std_from_central = self.std_from_central)
             else:
                 raise ValueError('fit_mode has to be either of ratio or subtract')
-            if np.sum(outliers) / len(outliers) > 0.95:
-                warnings.warn('More than 95% of points are rejected. No further sigma-clipping is applied.')
+            if np.sum(outliers & use_flag) / np.sum(use_flag) > 0.95:
+                warnings.warn('More than 95% of points {0:d}/{1:d} are rejected. No further sigma-clipping is applied.'.format(\
+                    np.sum(outliers & use_flag), np.sum(use_flag)))
                 outliers = np.array([False]*len(wvl))
                 break
             if np.sum(use_flag & outliers) == 0:
@@ -181,8 +286,9 @@ class ModelBase:
             flux = flx,
             use_flag = use_flag,
             flux_fit = yfit,
-            model_parameters = self.model_parameters,
-            std_residual = residual_std)
+            model_parameters = model_parameters,
+            std_residual = residual_std,
+            optimization_output = opt_out)
             
         
 class ContinuumSpline3(ModelBase):
@@ -267,7 +373,7 @@ class ContinuumSpline3(ModelBase):
     def update(self, xx, yy):
         model_parameters = {"spl": self._spline3fit(xx, yy, self.dx_knots)}
         self.model_parameters = model_parameters
-        return model_parameters
+        return model_parameters, None
 
     def __init__(self, \
         dwvl_knots, 
@@ -318,7 +424,6 @@ class ContinuumSpline3(ModelBase):
 
         '''
         super().__init__(
-            self.evaluate, self.update,
             niterate = niterate, low_rej = low_rej, high_rej = high_rej, grow = grow,
             naverage = naverage, fit_mode = fit_mode, samples = samples, 
             std_from_central = std_from_central)
@@ -331,7 +436,7 @@ class ContinuumPolynomial(ModelBase):
     def update(self, xx, yy):
         model_parameters = {"poly": np.polynomial.Polynomial.fit(xx, yy, deg=self.order)}
         self.model_parameters = model_parameters
-        return model_parameters
+        return model_parameters, None
 
     def evaluate(self, xx, model_parameters):
         if model_parameters['poly'] is None:
@@ -386,7 +491,6 @@ class ContinuumPolynomial(ModelBase):
 
         '''
         super().__init__(
-            self.evaluate, self.update,
             niterate = niterate, low_rej = low_rej, high_rej = high_rej, grow = grow,
             naverage = naverage, fit_mode = fit_mode,
             samples = samples, std_from_central = std_from_central)
@@ -491,7 +595,7 @@ class LineProfile(ModelBase):
             bounds= Bounds(const_low,const_high),options={'ftol':0.01/len(xx)})
         residual = f_residual(res.x)
         self.model_parameters = model_parameters
-        return model_parameters
+        return model_parameters, res
 
 
     def evaluate(self, xx, model_parameters):
@@ -605,7 +709,6 @@ class LineProfile(ModelBase):
 
         '''
         super().__init__(
-            self.evaluate, self.update,
             niterate = niterate, low_rej = low_rej, high_rej = high_rej, grow = grow,
             naverage = naverage, fit_mode = fit_mode,
             samples = samples, std_from_central = std_from_central)
@@ -649,61 +752,64 @@ class LineSynth(ModelBase):
             key: model_parameters[key] for key in self.synth_parameter_names}
         )
         smoothed = utils.smooth_spectrum(wvl, flux, model_parameters['vFWHM'])
-        return utils.rebin(wvl, smoothed, 
-            xx * (1.0 - model_parameters['rv'] / ckm), # Doppler shift
-            conserve_count=False)
+        flx_out =utils.rebin(wvl * (1.0 + model_parameters['rv'] / ckm), # Doppler shift
+            smoothed, 
+            xx,
+            conserve_count=False)    
+        return flx_out
 
-    def update(self, xx, yy, yerr = None, fitting_parameters = {}):
-        '''
-        For the fitting parameters, the following keys are supported: 
-        - scaling : dict
-            Scaling factors for each parameter to be fit.
-        - bounds : dict
-            Bounds for each parameter to be fit.
-        - curve_fit_kwargs : dict
-            Additional keywords passed to scipy.optimize.curve_fit
-        '''
-        for key in self.fitting_parameters_default.keys():
-            if key not in fitting_parameters.keys():
-                fitting_parameters[key] = self.fitting_parameters_default[key]
-        if "diff_step" not in fitting_parameters["curve_fit_kwargs"].keys():
-            fitting_parameters["curve_fit_kwargs"]["diff_step"] = fitting_parameters["diff_step"]
-        x0 = []
-        bounds = []
-        for key in self.parameters_to_fit:
-            if key.startswith('I_'): # Isotope
-                x0.append(np.log10(self.model_parameters[key]))
-            else: # rv, vFWHM, or abundances
-                x0.append(self.model_parameters[key])
-            
-            if key in fitting_parameters['scaling'].keys():
-                scale = fitting_parameters['scaling'][key]
-            else:
-                scale = 1.0
-            if key in fitting_parameters['bounds'].keys():
-                bounds.append( \
-                    (fitting_parameters['bounds'][key][0],\
-                     fitting_parameters['bounds'][key][1]) 
-                )
-            elif key == "vFWHM":
-                bounds.append( (0.0,np.inf) )
-            else:
-                bounds.append( (-np.inf,np.inf) )                
-        model_parameters = self.model_parameters.copy()
-        def f_fit(wvl,*xi):
-            for x,key in zip(xi,self.parameters_to_fit):
-                if key.startswith('I_'):# Isotope
-                    model_parameters[key] = 10.**x
-                else:# rv, vFWHM, or abundances
-                    model_parameters[key] = x
-            return self.evaluate(wvl, model_parameters)
-        res = curve_fit(f_fit, xx, yy, p0 = x0, sigma = yerr, 
-            bounds = np.array(bounds).T, 
-            method = 'trf',
-            **fitting_parameters.get("curve_fit_kwargs", {}))
-        self.fitting_result = res
-        self.model_parameters = model_parameters
-        return model_parameters
+##    def update(self, xx, yy, yerr = None, fitting_parameters = {}):
+##        '''
+##        For the fitting parameters, the following keys are supported: 
+##        - scaling : dict
+##            Scaling factors for each parameter to be fit.
+##        - bounds : dict
+##            Bounds for each parameter to be fit.
+##        - curve_fit_kwargs : dict
+##            Additional keywords passed to scipy.optimize.curve_fit
+##        '''
+##        for key in self.fitting_parameters_default.keys():
+##            if key not in fitting_parameters.keys():
+##                fitting_parameters[key] = self.fitting_parameters_default[key]
+##        if "diff_step" not in fitting_parameters["curve_fit_kwargs"].keys():
+##            fitting_parameters["curve_fit_kwargs"]["diff_step"] = fitting_parameters["diff_step"]
+##        x0 = []
+##        bounds = []
+##        for key in self.parameters_to_fit:
+##            if key.startswith('I_'): # Isotope
+##                x0.append(np.log10(self.model_parameters[key]))
+##            else: # rv, vFWHM, or abundances
+##                x0.append(self.model_parameters[key])
+##            
+##            if key in fitting_parameters['scaling'].keys():
+##                scale = fitting_parameters['scaling'][key]
+##            else:
+##                scale = 1.0
+##            if key in fitting_parameters['bounds'].keys():
+##                bounds.append( \
+##                    (fitting_parameters['bounds'][key][0],\
+##                     fitting_parameters['bounds'][key][1]) 
+##                )
+##            elif key == "vFWHM":
+##                bounds.append( (0.0,np.inf) )
+##            else:
+##                bounds.append( (-np.inf,np.inf) )                
+##        model_parameters = self.model_parameters.copy()
+##        def f_fit(wvl,*xi):
+##            for x,key in zip(xi,self.parameters_to_fit):
+##                if key.startswith('I_'):# Isotope
+##                    model_parameters[key] = 10.**x
+##                else:# rv, vFWHM, or abundances
+##                    model_parameters[key] = x
+##            return self.evaluate(wvl, model_parameters)
+##        res = curve_fit(f_fit, xx, yy, p0 = x0, sigma = yerr, 
+##            bounds = np.array(bounds).T, 
+##            method = 'trf',
+##            **fitting_parameters.get("curve_fit_kwargs", {}))
+##        self.fitting_result = res
+##        self.model_parameters = model_parameters
+##        return model_parameters, res
+
 
     def __init__(self, 
         fsynth, synth_parameters, parameters_to_fit, vfwhm_in = 5.0,
@@ -761,7 +867,6 @@ class LineSynth(ModelBase):
         '''
 
         super().__init__(
-            self.evaluate, self.update,
             niterate = niterate, low_rej = low_rej, high_rej = high_rej, grow = grow,
             naverage = naverage, fit_mode = fit_mode,
             samples = samples, std_from_central = std_from_central)
@@ -773,8 +878,45 @@ class LineSynth(ModelBase):
         self.parameters_to_fit = parameters_to_fit
         self.fitting_result = None
         
+        if continuum_model is not None:
+            self.continuum_model = continuum_model
+
+        # Default initial guess, bounds, and scaling
+        x0 = []
+        bounds = []
+        
+        for key in self.parameters_to_fit:
+            if key.startswith('I_'): # Isotope
+                x0.append(np.log10(self.model_parameters[key]))
+            else: # rv, vFWHM, or abundances
+                x0.append(self.model_parameters[key])
+    
+            if key == "vFWHM":
+                bounds.append( (0.0,np.inf) )
+            else:
+                bounds.append( (-np.inf,np.inf) )                
+        
+        self.x0_default = x0
+        self.bounds_default = np.array(bounds).T
+        self.scales = None    
+        
+        def func_model(wvl, *xi):
+            model_parameters = self.model_parameters.copy()
+            for x,key in zip(xi,self.parameters_to_fit):
+                if key.startswith('I_'):# Isotope
+                    model_parameters[key] = 10.**x
+                else:# rv, vFWHM, or abundances
+                    model_parameters[key] = x
+            self.model_parameters = model_parameters
+            return self.evaluate(wvl, model_parameters)
+        self.func_model = func_model
+        
+        
 
 class LineSynthContinuum:
+    # I wanted to integrate this with the ModelBase class, but that would require to add f_fit as an attribute,
+    # which would require a bit of rework in the structure. 
+    
     def __init__(self, 
         LineSynth_model,
         Continuum_model):
@@ -825,24 +967,77 @@ class LineSynthContinuum:
                 else:# rv, vFWHM, or abundances
                     model_parameters[key] = x
             # get the line synthesis
-            yfit = self.linesynth_model.evaluate(wvl, model_parameters)
+            yline = self.linesynth_model.evaluate(xx, model_parameters)
             # update the continuum
-            res = self.continuum_model.fit(wvl, yy / yfit)
-            ycontinuum = self.continuum_model.evaluate(wvl, res.model_parameters)
-            return yfit * ycontinuum
-        res = curve_fit(f_fit, xx, yy, p0 = x0, sigma = yerr, 
-            bounds = np.array(bounds).T, 
-            method = 'trf',
-            **fitting_parameters.get("curve_fit_kwargs", {}))
-        self.linesynth_model.fitting_result = res
-        self.linesynth_model.model_parameters = model_parameters
-        return model_parameters
+            # This needs to take xx and yy as input, not wvl since 
+            # continuum fitting often requires those outside the line fitting range
+            continuum_result = self.continuum_model.fit(xx, yy / yline) 
+            ycontinuum = self.continuum_model.evaluate(wvl, continuum_result.model_parameters)
+            return self.linesynth_model.evaluate(wvl, model_parameters) * ycontinuum
+
+        wvl_line, flx_line =  utils.average_nbins(\
+            self.linesynth_model.naverage, xx, yy
+        )
+        use_flag_line = utils.get_region_mask(\
+            wvl_line, self.linesynth_model.samples
+            ) & np.isfinite(flx_line)
+        outliers = np.array([False]*len(wvl_line))
+        for _ in range(self.linesynth_model.niterate):
+            use_flag = use_flag_line & (~outliers)
+            res = curve_fit(
+                f_fit, wvl_line[use_flag], flx_line[use_flag], 
+                p0 = x0, sigma = yerr[use_flag] if yerr is not None else None,
+                bounds = np.array(bounds).T, 
+                method = 'trf',
+                **fitting_parameters.get("curve_fit_kwargs", {}))
+            yfit = self.evaluate(wvl_line, 0)
+            if self.linesynth_model.fit_mode == 'subtract':
+                outliers = utils.sigmaclip(\
+                    wvl_line, flx_line, use_flag_line, yfit,
+                    self.linesynth_model.grow,
+                    self.linesynth_model.low_rej,
+                    self.linesynth_model.high_rej,
+                    std_from_central = self.linesynth_model.std_from_central
+                )
+            elif self.linesynth_model.fit_mode == 'ratio':
+                outliers = utils.sigmaclip(\
+                    wvl_line, flx_line/yfit, use_flag_line, np.ones(len(wvl_line)),
+                    self.linesynth_model.grow,
+                    self.linesynth_model.low_rej,
+                    self.linesynth_model.high_rej,
+                    std_from_central = self.linesynth_model.std_from_central
+                )
+            else:
+                raise ValueError('fit_mode must be either subtract or ratio')
+            if np.sum(outliers & use_flag_line) / np.sum(use_flag_line) > 0.95:
+                warnings.warn('More than 95% of points {0:d}/{1:d} are rejected. No further sigma-clipping is applied.'.format(\
+                    np.sum(outliers & use_flag_line), np.sum(use_flag_line)))
+                outliers = np.array([False]*len(wvl_line))
+                break
+            if np.sum(use_flag & outliers) == 0:
+                # No more points to remove
+                break                
+        residual_std = np.nanstd(flx_line[use_flag]-yfit[use_flag])
+        return FittingResults(
+            wavelength_raw = xx,
+            flux_raw = yy,
+            wavelength = wvl_line,
+            flux = flx_line,
+            use_flag = use_flag_line,
+            flux_fit = yfit,
+            model_parameters = self.linesynth_model.model_parameters,
+            std_residual = residual_std,
+            optimization_output = res,
+            optimization_output_sub = self.continuum_model.fit(xx, yy / self.linesynth_model(xx))
+            ), res
+
     
     def __call__(self, wavelength):
         return self.evaluate(wavelength, 0) # 0 is dummy
 
     def fit(self, wavelength, flux):
-        return self.update(wavelength, flux)
+        # This is just for convinience
+        return self.update(wavelength, flux)[0]
 
 
         
