@@ -39,7 +39,7 @@ class FittingResults:
     model_parameters : dict
     std_residual : float
     optimization_output : any = None
-    optimization_output_sub : any = None
+    result_continuum : any = None
     
 class ModelBase:
     def __init__(self, 
@@ -196,9 +196,8 @@ class ModelBase:
         -------
         FittingResults dataclass
         '''
+        result_continuum = None
         
-        if continuum_model is not None and not hasattr(self, "func_model"):
-            warnings.warn("continuum_model will not be updated unless func_model is used")
         wvl, flx = utils.average_nbins(self.naverage, wavelength, flux)
         use_flag = utils.get_region_mask(wvl, self.samples) & (np.isfinite(flx))
         outliers = np.array([False]*len(wvl))
@@ -212,7 +211,7 @@ class ModelBase:
                 if continuum_model is not None:
                     def func_model(wvl, *xi):
                         youter = self.func_model(wavelength,*xi)
-                        continuum_result = continuum_model.fit(wavelength, flux / youter)
+                        result_cont = continuum_model.fit(wavelength, flux / youter)
                         ycontinuum = continuum_model(wvl)
                         return self.func_model(wvl, *xi) * ycontinuum
                 else:                       
@@ -225,14 +224,20 @@ class ModelBase:
                     bounds = bounds,
                     x_scale = x_scale,
                     method = "trf",
+                    nan_policy = "omit",
                     **optimization_parameter
                 )
+                youter = self.func_model(wavelength, *opt_out[0])
+                if continuum_model is not None:
+                    result_continuum = continuum_model.fit(wavelength, flux / youter)
                 _ = self.func_model(wvl[use_flag], *opt_out[0])
             elif hasattr(self, "func_residual"):
                 p0 = self.x0_default
                 bounds = self.bounds_default
                 flx_in = flx[use_flag]
                 if continuum_model is not None:
+                    youter = self(wvl)
+                    result_continuum = continuum_model.fit(wavelength, flux / youter)
                     flx_in /= continuum_model(wvl[use_flag])
                 opt_out = minimize(
                     lambda x: np.sum(
@@ -243,10 +248,11 @@ class ModelBase:
                     **optimization_parameter
                 )
                 _ = self.func_residual(wvl[use_flag], flx_in, opt_out.x)
-                yfit = self(wvl, continuum_model = continuum_model)
             else:
                 flx_in = flx[use_flag]
                 if continuum_model is not None:
+                    youter = self(wvl)
+                    result_continuum = continuum_model.fit(wavelength, flux / youter)
                     flx_in /= continuum_model(wvl[use_flag])
                 model_parameters, opt_out = self.update(
                     wvl[use_flag], flx_in)
@@ -288,7 +294,9 @@ class ModelBase:
             flux_fit = yfit,
             model_parameters = model_parameters,
             std_residual = residual_std,
-            optimization_output = opt_out)
+            optimization_output = opt_out,
+            result_continuum = result_continuum
+            )
             
         
 class ContinuumSpline3(ModelBase):
@@ -758,58 +766,16 @@ class LineSynth(ModelBase):
             conserve_count=False)    
         return flx_out
 
-##    def update(self, xx, yy, yerr = None, fitting_parameters = {}):
-##        '''
-##        For the fitting parameters, the following keys are supported: 
-##        - scaling : dict
-##            Scaling factors for each parameter to be fit.
-##        - bounds : dict
-##            Bounds for each parameter to be fit.
-##        - curve_fit_kwargs : dict
-##            Additional keywords passed to scipy.optimize.curve_fit
-##        '''
-##        for key in self.fitting_parameters_default.keys():
-##            if key not in fitting_parameters.keys():
-##                fitting_parameters[key] = self.fitting_parameters_default[key]
-##        if "diff_step" not in fitting_parameters["curve_fit_kwargs"].keys():
-##            fitting_parameters["curve_fit_kwargs"]["diff_step"] = fitting_parameters["diff_step"]
-##        x0 = []
-##        bounds = []
-##        for key in self.parameters_to_fit:
-##            if key.startswith('I_'): # Isotope
-##                x0.append(np.log10(self.model_parameters[key]))
-##            else: # rv, vFWHM, or abundances
-##                x0.append(self.model_parameters[key])
-##            
-##            if key in fitting_parameters['scaling'].keys():
-##                scale = fitting_parameters['scaling'][key]
-##            else:
-##                scale = 1.0
-##            if key in fitting_parameters['bounds'].keys():
-##                bounds.append( \
-##                    (fitting_parameters['bounds'][key][0],\
-##                     fitting_parameters['bounds'][key][1]) 
-##                )
-##            elif key == "vFWHM":
-##                bounds.append( (0.0,np.inf) )
-##            else:
-##                bounds.append( (-np.inf,np.inf) )                
-##        model_parameters = self.model_parameters.copy()
-##        def f_fit(wvl,*xi):
-##            for x,key in zip(xi,self.parameters_to_fit):
-##                if key.startswith('I_'):# Isotope
-##                    model_parameters[key] = 10.**x
-##                else:# rv, vFWHM, or abundances
-##                    model_parameters[key] = x
-##            return self.evaluate(wvl, model_parameters)
-##        res = curve_fit(f_fit, xx, yy, p0 = x0, sigma = yerr, 
-##            bounds = np.array(bounds).T, 
-##            method = 'trf',
-##            **fitting_parameters.get("curve_fit_kwargs", {}))
-##        self.fitting_result = res
-##        self.model_parameters = model_parameters
-##        return model_parameters, res
-
+    def func_model(self, wvl, *xi):
+        model_parameters = self.model_parameters.copy()
+        for x,key in zip(xi,self.parameters_to_fit):
+            if key.startswith('I_'):# Isotope
+                model_parameters[key] = 10.**x
+            else:# rv, vFWHM, or abundances
+                model_parameters[key] = x
+        self.model_parameters = model_parameters
+        return self.evaluate(wvl, model_parameters)
+        
 
     def __init__(self, 
         fsynth, synth_parameters, parameters_to_fit, vfwhm_in = 5.0,
@@ -900,16 +866,6 @@ class LineSynth(ModelBase):
         self.bounds_default = np.array(bounds).T
         self.scales = None    
         
-        def func_model(wvl, *xi):
-            model_parameters = self.model_parameters.copy()
-            for x,key in zip(xi,self.parameters_to_fit):
-                if key.startswith('I_'):# Isotope
-                    model_parameters[key] = 10.**x
-                else:# rv, vFWHM, or abundances
-                    model_parameters[key] = x
-            self.model_parameters = model_parameters
-            return self.evaluate(wvl, model_parameters)
-        self.func_model = func_model
         
         
 
