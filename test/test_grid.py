@@ -40,7 +40,7 @@ class TestGrid(unittest.TestCase):
             run_id='test_moog_moogmod',
             moog_mod_file=os.path.join(datadir,'model.in'),
             workdir='output',no_line_flux_input=-90, wmin=5850, wmax=5860, parallel = True)
-        self.assertAlmostEqual(np.max(np.abs(g1(0.3)-self.moog5603[1])), 0.0, places=3)
+        self.assertAlmostEqual(np.max(np.abs(g1(0.3)[1]-self.moog5603[1])), 0.0, places=3)
         self.assertAlmostEqual(self.depth, g1.input2depth(0.3), places=3)
         self.assertAlmostEqual(np.max(np.abs(g1.depth2flux(self.depth)-self.moog5603[1])), 0.0, places=3)
         
@@ -53,7 +53,7 @@ class TestGrid(unittest.TestCase):
             run_id='test_moog_moogmod',
             moog_mod_file=os.path.join(datadir,'model.in'),
             workdir='output', wmin=5850, wmax=5860, parallel = True)
-        self.assertAlmostEqual(np.max(np.abs(g1(0.3)-self.moog5603[1])), 0.0, places=3)
+        self.assertAlmostEqual(np.max(np.abs(g1(0.3)[1]-self.moog5603[1])), 0.0, places=3)
 
     def test_grid_ts(self): 
         g1 = grid.construct_grid(ts.synth,
@@ -63,7 +63,7 @@ class TestGrid(unittest.TestCase):
             run_id='test_ts_mod',
             marcs_mod_file = os.path.join(datadir,'sun_marcs.mod'),
             workdir='output',no_line_flux_input=-90, wmin=5850, wmax=5860, vt=1.0, feh=0.0, parallel = True)
-        self.assertAlmostEqual(np.max(np.abs(g1(0.3)-self.ts5603[1])), 0.0, places=2)
+        self.assertAlmostEqual(np.max(np.abs(g1(0.3)[1]-self.ts5603[1])), 0.0, places=2)
         self.assertAlmostEqual(self.depth, g1.input2depth(0.3), places=2)
         self.assertAlmostEqual(np.max(np.abs(g1.depth2flux(self.depth)-self.ts5603[1])), 0.0, places=2)
 
