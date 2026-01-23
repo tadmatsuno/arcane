@@ -28,6 +28,23 @@ def get_dx(x):
   dx = np.hstack([dx1[0],0.5*(dx1[1:]+dx1[:-1]),dx1[-1]])
   return dx
 
+
+def get_edges_dx(x):
+  """
+  This function computes the edges and bin size from an array of x-values.
+  edge_i is defined as (x_{i}+x_{i-1})/2
+  dx is the bin size defined as edge_{i+1} - edge_{i}
+  for i=0 and i=n, edge_0 = x_0 - (x_1 - x_0)/2, edge_n = x_n + (x_n - x_{n-1})/2
+  """
+  xedges = 0.5*(x[1:]+x[:-1])
+  xedges = np.hstack([\
+    x[0] - 0.5*(x[1]-x[0]), 
+    xedges, 
+    x[-1] + 0.5*(x[-1]-x[-2])
+  ])
+  dx = np.diff(xedges)
+  return xedges, dx
+
 def average_nbins(nbin,x,y):
   '''
   This function carris out binning. 
@@ -59,7 +76,7 @@ def average_nbins(nbin,x,y):
       np.sum([dx[0+ii:nfin:nbin] for ii in range(nbin)],axis=0)
     return xx,yy
 
-def rebin(x,y,xnew,conserve_count=True,fast=True): 
+def rebin(x, y, xnew, conserve_count=True, nchunk_max = 1000000, npix_mask_criterion = np.inf ): 
   '''
   This function conducts re-binning of a spectrum.
 
@@ -81,34 +98,65 @@ def rebin(x,y,xnew,conserve_count=True,fast=True):
     the same as sum(y). Useful when flux is shown in photon counts.
     If False, intergration is conserved. 
 
-  fast: bool
-    if True, it is just a smple interpolation and interpolated flux is 
-    not integrated for each pixel.
+  nchunk_max: int
+    Maximum number of chunks to process at once. If set to a large number,
+    the result might be susceptible to floating point precision issue.
+    But I'm not sure. To be on the safe side, keep it to a reasonable number.
+    
+  npix_mask_criterion: int
+    If there is a gap larger than npix_mask_criterion * median_pixel_size,
+    fluxes in the gap will be set to zero.
 
   Returns
   -------
     ynew : list of float
       y-values at xnew
   '''
+  x0 = np.asarray(x)
+  y0 = np.asarray(y)
+  x = x0[np.isfinite(y0)]
+  y = y0[np.isfinite(y0)]
+  assert np.all(np.diff(x)>0), "x has to be in ascending order"
+  assert np.all(np.diff(xnew)>0), "xnew has to be in ascending order"
 
-  dx = get_dx(x) 
-  dxnew = get_dx(xnew) 
-  if conserve_count: # total count conserved (input is per pix)
-      spl = splrep(x,y/dx,k=3,task=0,s=0) 
-      if fast:
-        return splev(xnew,spl,ext=1)*dxnew
-      else:
-        return np.array([splint(xn-0.5*dxn,xn+0.5*dxn,spl) \
-          for xn,dxn in zip(xnew,dxnew)]) 
-  else: #total flux conserved (input is in physical unit)
-        #use this for normalized spectra
-      spl = splrep(x,y,k=3,task=0,s=0) 
-      if fast:
-        return splev(xnew,spl,ext=1)
-      else:
-        return np.array([splint(xn-0.5*dxn,xn+0.5*dxn,spl)/dxn \
-          for xn,dxn in zip(xnew,dxnew)]) 
+  xnew = np.asarray(xnew)
+  
+  xnew_edges, dxnew = get_edges_dx(xnew)
+  yout = np.zeros(len(xnew))
 
+  delx = np.diff(x)
+  delx_large = np.concatenate([np.nonzero(delx > npix_mask_criterion*np.median(delx))[0], [len(delx)-1]])
+  
+  i0 = 0
+  for i in range(len(delx_large)):
+    i1 = i0
+    while i1 <= delx_large[i]:
+      i1 = i0 + nchunk_max
+      i1 = np.minimum(i1, delx_large[i]+1)
+      x_in = x[i0:i1]
+      y_in = y[i0:i1]
+      x_edges, dx = get_edges_dx(x_in)
+      if conserve_count: # total count conserved (input is per pix)
+          fxdx = y_in
+      else:
+          fxdx = y_in * dx
+      
+      cdf = np.concatenate([[0.0], np.cumsum(fxdx)])
+      
+      new_mask = (x_in[0] <= xnew) & (xnew <= x_in[-1])
+      j0 = np.nonzero(new_mask)[0][0]
+      j1 = np.nonzero(new_mask)[0][-1]+1
+      cdf_new = np.interp(xnew_edges[j0:j1+1], x_edges, cdf,
+            left=0.0, right=cdf[-1])
+      yout[new_mask] = np.diff(cdf_new)
+      i0 = i1 -1
+    i0 = i1
+    
+  if conserve_count:
+    return yout
+  else:
+    return yout / dxnew
+  
 def x_sorted(xx,yy):
   '''
   This function sort yy in ascending order in xx
