@@ -158,7 +158,7 @@ def construct_grid(fsynth, parameters_name, values,
     if parallel:
         inputs = [dict({name: v for v,name in zip(vv,parameters_name)}, in_parallel = True, **kwargs) for vv in values]
         tasks = [(fsynth, inputd) for inputd in inputs]
-        with Pool(2) as pool:
+        with Pool() as pool:
             results_list = pool.map(_run_fsynth, tasks)
     else:
         results_list = [fsynth(**dict({name: v for v,name in zip(vv,parameters_name)}, in_parallel = True, **kwargs)) for vv in values]
