@@ -22,9 +22,6 @@ isotopic_ratio = np.zeros((len(solarabundance.atoms),296))
 
 def load_isotopic_ratio(source="solar_Asplund2021"):
     """
-    You can specify multiple sources. The earlier source has higher priority. 
-    For example, one might want to assume r process isotopic ratio for heavy 
-    elements and solar system isotopic ratio for light elements.
     """
     global current_source
     global isotopic_ratio
@@ -76,6 +73,51 @@ def get_fraction(elem, amass):
             amass_arr = np.full(elem_arr.shape, amass_arr.item())
         else:
             raise ValueError("elem and amass must have the same shape or be scalars")
-    return np.vectorize(_get_fraction)(elem_arr, amass_arr)
+    output = np.vectorize(_get_fraction)(elem_arr, amass_arr)
+    try:
+        return output.item()
+    except:
+        return output
 
     
+isotope_mass = np.zeros((len(solarabundance.atoms),296))
+atom_mass = np.zeros(len(solarabundance.atoms))
+def load_atomic_mass(source="NIST"):
+    """
+    """
+    global isotope_mass
+    global atom_mass
+    
+    isotope_mass[:,:] = 0
+    table_path = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)),
+        "tables_atomicmass",
+        f"{source}.csv"
+    )
+    with open(table_path,'r') as f:
+        lines = f.readlines()
+    for l in lines:
+        items = l.split(',')
+        _znum = items[0]
+        try:
+            znum = int(_znum)
+        except:
+            pass
+        amass = int(items[1])
+        amu = float(items[2])
+        isotope_mass[znum,amass] = amu
+    atom_mass = np.sum(isotopic_ratio/100 * isotope_mass, axis=1)
+load_atomic_mass()
+
+def get_atomic_mass(elem):
+    """
+    Parameters
+    ----------
+    elem : str or int
+        Element symbol or atomic number
+    """
+    try:
+        int(elem)
+    except:
+        elem = solarabundance.get_atomnum(elem)
+    return atom_mass[elem]

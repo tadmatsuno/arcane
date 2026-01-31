@@ -1,5 +1,6 @@
 import pandas
-from solarabundance21 import getamass, elemtopnum
+from arcane.utils import solarabundance as sa
+from arcane.utils import isotopic_ratio as ir
 import numpy as np
 from astropy.constants import k_B,a0
 import astropy.units as u
@@ -14,7 +15,7 @@ from .linelist import Linelist
 def convert_sigma_alpha_to_gamma(elem_num, sigma, alpha,t0=1.0e4*u.K):
     elemnum = int(elem_num)
     reduced_mass = 1.0 / \
-        ( 1.0/getamass(1,pnum='yes') + 1.0/getamass(elemnum,pnum='yes'))
+        ( 1.0/ir.get_atomic_mass(1) + 1.0/ir.get_atomic_mass(elemnum))
     vbar = np.sqrt(8.0*k_B*t0 / (np.pi*reduced_mass*u.u))
     v0 = 1.0e4*u.m/u.s
     sigma = sigma*a0**2.
@@ -49,7 +50,7 @@ def get_atom_num(sp1):
     if not atom_mol[idx].isnumeric():
         atoms.append(atom_mol[start_idx:])
 
-    zz = [elemtopnum(atom) for atom in atoms]
+    zz = [sa.get_atomnum(atom) for atom in atoms]
 
     return atoms, zz, ion
 
@@ -108,7 +109,7 @@ def get_iso_atom_num(sp1):
         ion = idx - idx_start + 1 # [1, 2, 3]  for ["", +, ++]
     else:
         raise IOError("An unexpected end state", sp1, stats)
-    zz = [elemtopnum(atom) for atom in atoms]
+    zz = [sa.get_atomnum(atom) for atom in atoms]
     return atoms, zz, isos, ion
 
 

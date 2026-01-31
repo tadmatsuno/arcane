@@ -1,5 +1,6 @@
 import pandas
-from solarabundance21 import getamass, elemtopnum,isotope,getisotope
+from arcane.utils import solarabundance as sa
+from arcane.utils import isotopic_ratio
 import numpy as np
 from astropy.constants import k_B,a0
 import astropy.units as u
@@ -69,7 +70,7 @@ def get_atom_num(species_id):
     if not atom_mol[idx].isnumeric():
         atoms.append(atom_mol[start_idx:])
 
-    zz = [elemtopnum(atom) for atom in atoms]
+    zz = [sa.get_atomnum(atom) for atom in atoms]
 
     return atoms, zz, ion
     
@@ -196,7 +197,7 @@ class Linelist(pandas.DataFrame):
                 mask = (self[f"Z{ii+1}"]==zz)&(self[f"A{ii+1}"]==aa)
                 if aa == 0:
                     continue
-                iso_fraction = getisotope(zz,aa)
+                iso_fraction = isotopic_ratio.get_fraction(zz,aa)
                 self.loc[mask,"isotope_correction"] += np.log10(iso_fraction)
                 self.loc[mask,f"fraction{ii+1}"] = iso_fraction
                 
