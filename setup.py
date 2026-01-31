@@ -46,6 +46,7 @@ setup(
         "arcane": [
             "continuum/*.ui",
             "ew/*.ui",
+            "utils/tables*/*csv",
         ]
     },
     classifiers=[
