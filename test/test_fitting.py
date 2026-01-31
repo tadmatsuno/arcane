@@ -4,7 +4,7 @@ from arcane.spectrum import model
 import numpy as np
 import unittest
 import os
-import iofiles
+from arcane.utils import iofiles
 moog.set_moogsilent_path("/mnt/d/MOOG/mymoog17scat/MOOGSILENT")
 
 valddir = os.path.join(os.path.dirname(__file__),'DATA/vald')
