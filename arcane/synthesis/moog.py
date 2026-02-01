@@ -573,8 +573,12 @@ def run_moog(mode, linelist, run_id = '', workdir = '.',
 #    print(wmin_ll,wmax_ll,wmin,wmax)
     if wmin is None:
         wmin = wmin_ll - dwvl_margin
+    elif wmin_ll < wmin - 10:
+        raise ValueError('The linelist must not start from a wavelength smaller than wmin - 10 (NOT ALLOWED BY MOOG)')
     if wmax is None:
         wmax = wmax_ll + dwvl_margin
+    elif wmax_ll > wmax + 10:
+        raise ValueError('The linelist must not end at a wavelength larger than wmax + 10 (NOT ALLOWED BY MOOG)')
 #    print(wmin_ll,wmax_ll,wmin,wmax)
     if strong_lines is not None:
         write_linelist(strong_lines,fstrong_lines,
