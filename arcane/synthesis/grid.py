@@ -22,7 +22,7 @@ class SpectraGrid:
             sortidx = np.argsort(self.input_values.ravel())
             values_in = self.input_values.ravel()[sortidx]
             fluxes_in = self.fluxes[sortidx]
-            self.interpolator = Akima1DInterpolator(values_in, fluxes_in)
+            self.interpolator = Akima1DInterpolator(values_in, fluxes_in, extrapolate=True)
             if self.ews is not None:
                 ews_in = self.ews[sortidx]
                 sortidx2 = np.argsort(ews_in)
@@ -30,7 +30,7 @@ class SpectraGrid:
                 flux_in_ew = fluxes_in[sortidx2][index_unique_ew]
                 ews = np.hstack([-unique_ew[::-1],0.0,unique_ew])
                 fluxes = np.vstack([flux_in_ew[::-1,:], self.no_line_flux, flux_in_ew])
-                self.ew2flux = Akima1DInterpolator(ews, fluxes)
+                self.ew2flux = Akima1DInterpolator(ews, fluxes, extrapolate=True)
                 self.ew2input = Akima1DInterpolator(ews_in, values_in)
                 self.input2ew = Akima1DInterpolator(values_in, ews_in)
             if self.no_line_flux is not None:
@@ -50,7 +50,7 @@ class SpectraGrid:
                 minus_flux = fluxdiff_in_depth[::-1,:] + self.no_line_flux
                 fluxes = np.vstack([minus_flux, self.no_line_flux, self.no_line_flux - fluxdiff_in_depth])
 #                print(depths)
-                self.depth2flux = Akima1DInterpolator(depths, fluxes)
+                self.depth2flux = Akima1DInterpolator(depths, fluxes, extrapolate=True)
                 self.depth2input = Akima1DInterpolator(depths0, values_in_depth)
                 self.input2depth = Akima1DInterpolator(values_in_depth, depths0)
         else:

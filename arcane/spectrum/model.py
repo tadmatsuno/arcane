@@ -183,7 +183,7 @@ class ModelBase:
         self = copy.deepcopy(model0)
         return mc_result
 
-    def fit(self, wavelength, flux, continuum_model = None, optimization_parameter = {}):
+    def fit(self, wavelength, flux, continuum_model = None, optimization_parameter = {}, debug=False):
         '''
         Fit the model to the data with sigma-clipping.
         Parameters
@@ -200,8 +200,15 @@ class ModelBase:
         
         wvl, flx = utils.average_nbins(self.naverage, wavelength, flux)
         use_flag = utils.get_region_mask(wvl, self.samples) & (np.isfinite(flx))
+        if debug:
+            print(f"Initial number of points used for fitting: {np.sum(use_flag)} out of {len(wvl)}")
         outliers = np.array([False]*len(wvl))
         for _ in range(self.niterate):
+            if debug:
+                print(f'{_} th iteration: Fitting with {np.sum(use_flag)} points out of {len(wvl)}'+\
+                    f" the number of outliers in the last iteration: {np.sum(outliers)}")
+                print(f"Among use_flag, postive flux: {np.sum(flx[use_flag] > 0)}, negative flux: {np.sum(flx[use_flag] <= 0)}"+\
+                    f", nan flux: {np.sum(flx[use_flag] == 0)}")
             use_flag = use_flag & (~outliers)
             # Try curve_fit -> minimize -> self.update
             if hasattr(self, "func_model"):
@@ -209,12 +216,18 @@ class ModelBase:
                 bounds = self.bounds_default
                 x_scale = self.scales if self.scales is not None else np.ones(len(p0))
                 if continuum_model is not None:
+                    if debug:
+                        print("Fitting with continuum model using curve_fit")
                     def func_model(wvl, *xi):
                         youter = self.func_model(wavelength,*xi)
-                        result_cont = continuum_model.fit(wavelength, flux / youter)
+                        if debug:
+                            print(f"Current parameters: {xi}")
+                        result_cont = continuum_model.fit(wavelength, flux / youter ,debug=debug)
                         ycontinuum = continuum_model(wvl)
                         return self.func_model(wvl, *xi) * ycontinuum
-                else:                       
+                else:
+                    if debug:
+                        print("Fitting without continuum model using curve_fit")                     
                     func_model = self.func_model
                 opt_out = curve_fit(
                     func_model,
@@ -229,16 +242,20 @@ class ModelBase:
                 )
                 youter = self.func_model(wavelength, *opt_out[0])
                 if continuum_model is not None:
-                    result_continuum = continuum_model.fit(wavelength, flux / youter)
+                    result_continuum = continuum_model.fit(wavelength, flux / youter, debug=debug)
                 _ = self.func_model(wvl[use_flag], *opt_out[0])
             elif hasattr(self, "func_residual"):
                 p0 = self.x0_default
                 bounds = self.bounds_default
                 flx_in = flx[use_flag]
                 if continuum_model is not None:
+                    if debug:
+                        print("Fitting with continuum model using minimize")
                     youter = self(wvl)
-                    result_continuum = continuum_model.fit(wavelength, flux / youter)
+                    result_continuum = continuum_model.fit(wavelength, flux / youter, debug=debug)
                     flx_in /= continuum_model(wvl[use_flag])
+                elif debug:
+                    print("Fitting without continuum model using minimize")
                 opt_out = minimize(
                     lambda x: np.sum(
                     self.func_residual(wvl[use_flag], flx_in, x)**2),
@@ -251,9 +268,13 @@ class ModelBase:
             else:
                 flx_in = flx[use_flag]
                 if continuum_model is not None:
+                    if debug:
+                        print("Fitting with continuum model using update (deterministic)")
                     youter = self(wvl)
-                    result_continuum = continuum_model.fit(wavelength, flux / youter)
+                    result_continuum = continuum_model.fit(wavelength, flux / youter, debug=debug)
                     flx_in /= continuum_model(wvl[use_flag])
+                elif debug:
+                    print("Fitting without continuum model using update (deterministic)")
                 model_parameters, opt_out = self.update(
                     wvl[use_flag], flx_in)
             
