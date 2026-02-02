@@ -35,7 +35,8 @@ class SpectraGrid:
                 self.input2ew = Akima1DInterpolator(values_in, ews_in)
             if self.no_line_flux is not None:
                 flux_diff = self.no_line_flux - fluxes_in
-                depths0 = np.max(flux_diff, axis=1)
+                idxmax = np.argmax(np.median(flux_diff, axis=0))
+                depths0 = flux_diff[:, idxmax]
                 # I need to make sure depths0 is strictly increasing for Akima1DInterpolator
                 # Cut out decreasing parts
                 increasing_idx = np.nonzero(np.diff(depths0) > 0)[0] + 1
@@ -53,6 +54,7 @@ class SpectraGrid:
                 self.depth2flux = Akima1DInterpolator(depths, fluxes, extrapolate=True)
                 self.depth2input = Akima1DInterpolator(depths0, values_in_depth)
                 self.input2depth = Akima1DInterpolator(values_in_depth, depths0)
+                self.depth_wavelength = self.wavelength[idxmax]
         else:
             warnings.warn("High-dimensional interpolation is experimental.")  
             self.interpolator = RBFInterpolator(np.max(flux_diff, axis=1), self.fluxes)
