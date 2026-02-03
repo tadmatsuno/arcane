@@ -39,8 +39,9 @@ class SpectraGrid:
                 else:
                     wl_mask = np.ones_like(self.wavelength, dtype=bool)
                     
-                flux_diff = np.where(wl_mask,self.no_line_flux - fluxes_in,-np.inf)
-                idxmax = np.argmax(np.median(flux_diff, axis=0))
+                flux_diff = self.no_line_flux - fluxes_in
+                flux_diff_mask = np.where(wl_mask,self.no_line_flux - fluxes_in,-1e5)
+                idxmax = np.argmax(np.median(flux_diff_mask, axis=0))
                 depths0 = flux_diff[:, idxmax]
                 # I need to make sure depths0 is strictly increasing for Akima1DInterpolator
                 # Cut out decreasing parts
@@ -105,6 +106,7 @@ def construct_grid(fsynth, parameters_name, values,
         grid_values = None, labels = None, 
         no_line_flux_input = None,
         parallel = True,
+        depth_wr_range = None,
         **kwargs):
     """
     Construct a grid of synthetic spectra by varying multiple parameters.
@@ -191,6 +193,7 @@ def construct_grid(fsynth, parameters_name, values,
         grid_values,
         np.array([res[1] for res in results_list]),
         results_list[0][0],
-        no_line_flux=no_line_flux
+        no_line_flux=no_line_flux,
+        depth_wr_range=depth_wr_range
     )
 
