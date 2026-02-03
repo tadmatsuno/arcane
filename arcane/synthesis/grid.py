@@ -5,7 +5,7 @@ from multiprocessing import Pool
 from functools import partial
 
 class SpectraGrid:
-    def __init__(self, labels, input_values, fluxes, wavelength, no_line_flux = None, ews = None):
+    def __init__(self, labels, input_values, fluxes, wavelength, no_line_flux = None, ews = None, depth_wr_range = None):
         self.labels = labels
         self.input_values = input_values
         self.fluxes = fluxes
@@ -14,10 +14,9 @@ class SpectraGrid:
         self.bounds = [(np.min(input_values[:,i]), np.max(input_values[:,i])) for i in range(self.ndim)]
         self.no_line_flux = no_line_flux
         self.ews = ews
-        self.construct_grid()
-        
+        self.construct_grid(depth_wr_range=depth_wr_range)
     
-    def construct_grid(self):
+    def construct_grid(self, depth_wr_range=None):
         if self.ndim == 1:
             sortidx = np.argsort(self.input_values.ravel())
             values_in = self.input_values.ravel()[sortidx]
@@ -34,7 +33,13 @@ class SpectraGrid:
                 self.ew2input = Akima1DInterpolator(ews_in, values_in)
                 self.input2ew = Akima1DInterpolator(values_in, ews_in)
             if self.no_line_flux is not None:
-                flux_diff = self.no_line_flux - fluxes_in
+                if depth_wr_range is not None:
+                    wr_min, wr_max = depth_wr_range
+                    wl_mask = (self.wavelength >= wr_min) & (self.wavelength <= wr_max)
+                else:
+                    wl_mask = np.ones_like(self.wavelength, dtype=bool)
+                    
+                flux_diff = np.where(wl_mask,self.no_line_flux - fluxes_in,-np.inf)
                 idxmax = np.argmax(np.median(flux_diff, axis=0))
                 depths0 = flux_diff[:, idxmax]
                 # I need to make sure depths0 is strictly increasing for Akima1DInterpolator
@@ -57,7 +62,7 @@ class SpectraGrid:
                 self.depth_wavelength = self.wavelength[idxmax]
         else:
             warnings.warn("High-dimensional interpolation is experimental.")  
-            self.interpolator = RBFInterpolator(np.max(flux_diff, axis=1), self.fluxes)
+            self.interpolator = RBFInterpolator(self.input_values, self.fluxes)
             if self.ews is not None:
                 self.input2ew = RBFInterpolator(self.input_values, self.ews)
     
