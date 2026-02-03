@@ -38,7 +38,7 @@ def set_marcs_path(marcs_path):
 
 find_data_dir()
 
-with open(data_dir+'MARCS_avai.dat') as fout:
+with open(os.path.join(data_dir,'MARCS_avai.dat')) as fout:
   grid_value = {}
   for line in fout.readlines():
     key = line[0:10].strip()
@@ -48,8 +48,7 @@ with open(data_dir+'MARCS_avai.dat') as fout:
       val = np.array([float(val) for val in line[10:].split()])
     grid_value[key] = val
 
-  
-grid = pandas.read_csv(data_dir+'MARCS_grid.csv',index_col=None)
+grid = pandas.read_csv(os.path.join(data_dir,'MARCS_grid.csv'),index_col=None)
 
 def get_filename1(geometry,teff,logg,mh,alpha=None):
   assert geometry in ['p','s'], 'Geometry has to be either p or s.'
@@ -64,7 +63,7 @@ def get_filename1(geometry,teff,logg,mh,alpha=None):
       (grid['mh']==mh)&(grid['alphafe']==alpha)]
   assert len(g1)<=1,f'Cannot identify unique model {teff} {logg} {mh} {alpha}'
   assert len(g1)>=1,f'No model exist {teff} {logg} {mh} {alpha}'
-  return data_dir+g1.iloc[0]['filename']
+  return os.path.join(data_dir,g1.iloc[0]['filename'])
 
 
 #def resample_model(model,lgtauRnew):
