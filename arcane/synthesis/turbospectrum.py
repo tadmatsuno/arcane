@@ -597,7 +597,7 @@ def run_turbospectrum(mode,
     if mode == "babsma":
         ts_input_str += f"'MODELINPUT:' '{fmodelin}'\n"+\
             f"'MODELOPAC:' '{ts_opac_file}'\n"+\
-            f"'XIFIX: '{ts_input_format(True)}'\n"+\
+            f"'XIFIX:' '{ts_input_format(True)}'\n"+\
             f"{vt}\n"
     # bsyn inputs
     if mode == "syn":
