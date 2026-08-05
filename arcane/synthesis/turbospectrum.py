@@ -372,6 +372,7 @@ def write_linelist(linelist, flinelist, ignore_isotope=True, default_dampnum=2.5
         for ts_sp in ts_species_unique:
             mask = ts_species_arr == ts_sp
             ions = np.unique(np.array(linelist["ion"])[mask])
+            ions = ions <= 2 # Only neutral and singly ionized species are supported by Turbospectrum
             for ion in ions:
                 mask_ion = np.array(linelist["ion"]) == ion
                 mask_comb = mask & mask_ion
