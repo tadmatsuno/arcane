@@ -438,7 +438,7 @@ def write_linelist(linelist,flinelist,isabfind=False,default_gamma_vw=3.,dwvl_ma
         raise TypeError('linelist should be a dict, pandas.DataFrame, Linelist class or a filename')
     return wmin,wmax
 
-def run_moog(mode, linelist, run_id = '', workdir = '.',
+def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
     moog_mod_file = None, marcs_mod_file = None, 
     teff = None, logg = None, feh = None, alphafe = None, 
     feh_mod = None, alphafe_mod = None,
@@ -750,7 +750,7 @@ def read_moog_sum_synth(fsummary):
     return wvl,flux
 
         
-def synth(linelist, run_id = '', workdir = '.',
+def synth(linelist, run_id = '', workdir = '/tmp',
     moog_mod_file = None, marcs_mod_file = None, 
     teff = None, logg = None, feh = None, alphafe = None, 
     feh_mod = None, alphafe_mod = None,

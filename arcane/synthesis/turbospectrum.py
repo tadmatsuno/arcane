@@ -423,7 +423,7 @@ def ts_input_format(value):
 
                 
 def run_turbospectrum(mode,
-    linelist = None, run_id='',workdir='.',
+    linelist = None, run_id='',workdir='/tmp',
     ts_opac_file = None, marcs_mod_file = None,
     teff = None, logg = None, feh = None, alphafe = None, 
     feh_mod = None, alphafe_mod = None,
@@ -650,7 +650,7 @@ def run_turbospectrum(mode,
         result_dict["log_file"] = flog
     return result_dict
     
-def synth(linelist=None, run_id='', workdir='.',
+def synth(linelist=None, run_id='', workdir='/tmp',
     ts_opac_file=None, marcs_mod_file=None,
     teff=None, logg=None, feh=None, alphafe=None,
     feh_mod=None, alphafe_mod=None,
