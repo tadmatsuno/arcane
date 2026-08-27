@@ -363,6 +363,12 @@ def write_linelist(linelist,flinelist,isabfind=False,default_gamma_vw=3.,dwvl_ma
             assert key in linelist.keys(), f'{key} needs to be in linelist keys'
         assert ('species' in linelist.keys())|('moog_species' in linelist.keys()),\
             'species or moog_species needs to be in linelist keys'
+        if len(linelist["wavelength"]) == 0:
+            warnings.warn('Linelist is empty. No lines will be used in the synthesis.')
+            with open(flinelist, 'w') as f:
+                f.write('Linelist created by arcane\n')
+            return None,None
+
 
         if not 'moog_species' in linelist.keys():
             linelist['moog_species'] = [get_moog_species_id(species) for species in linelist['species']]
@@ -475,6 +481,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
     mode : str
         'syn' : synthetic spectrum
         'cog' : COG
+        'ewfind' : EW from given abundance
         'cogsyn' : COG + synthetic spectrum
         'blends' : blends
 
@@ -573,10 +580,14 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
 #    print(wmin_ll,wmax_ll,wmin,wmax)
     if wmin is None:
         wmin = wmin_ll - dwvl_margin
+    elif wmin_ll is None:
+        pass
     elif wmin_ll < wmin - 10:
         raise ValueError('The linelist must not start from a wavelength smaller than wmin - 10 (NOT ALLOWED BY MOOG)')
     if wmax is None:
         wmax = wmax_ll + dwvl_margin
+    if wmax_ll is None:
+        pass
     elif wmax_ll > wmax + 10:
         raise ValueError('The linelist must not end at a wavelength larger than wmax + 10 (NOT ALLOWED BY MOOG)')
 #    print(wmin_ll,wmax_ll,wmin,wmax)
@@ -701,7 +712,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
         if mode in ['cog','cogsyn']:
             f.write('coglimits\n')
             f.write('{0:10.3f}{1:10.3f}{2:10.3f}{3:10.3f}{4:5d}\n'.format(\
-                cog_ew_minmax[0],cog_ew_minmax[1],0.1,species_vary))
+                cog_ew_minmax[0],cog_ew_minmax[1],0.1,0.0,species_vary))
         if mode in ['blends']:
             f.write('blenlimits\n')
             f.write('{0:10.3f}{1:10.3f}{2:10.3f}\n'.format(\
@@ -728,6 +739,12 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
     if mode == 'synth':
         result = read_moog_sum_synth(fsummary)
         return result
+    elif mode == "ewfind":
+        result = read_moog_sum_ewfind(fsummary)
+        return result
+    elif mode == "abfind":
+        result = read_moog_sum_abfind(fsummary)
+        return result
     else:
         return os.path.join(workdir, fsummary) # return the filename of the summary file otherwise
 
@@ -748,6 +765,235 @@ def read_moog_sum_synth(fsummary):
     flux = np.array(flux)
     wvl = wvl[0:len(flux)]
     return wvl,flux
+
+def read_moog_sum_ewfind(fsummary):
+    results = []
+    with open(fsummary,'r') as f:
+        line = ''
+        reading = False
+        for line in f.readlines():
+            if line.startswith("wavelength"):
+                reading = True
+                continue
+            if reading:
+                wvl = float(line[0:10])
+                expot = float(line[10:20])
+                loggf = float(line[20:30])
+                species = line[30:40].strip()
+                abund = float(line[40:50])
+                ew = float(line[50:60])
+                results.append(\
+                    {
+                        'wavelength': wvl,
+                        'expot': expot,
+                        'loggf': loggf,
+                        'species': species,
+                        'abund': abund,
+                        'ew': ew
+                    }
+                )
+                reading = False
+    return pandas.DataFrame.from_dict(results)
+
+def read_moog_sum_abfind(fsummary):
+    results = []
+    with open(fsummary,'r') as f:
+        line = ''
+        reading = False
+        for line in f.readlines():
+            if line.startswith("wavelength"):
+                reading = True
+                continue
+            if reading:
+                if line.startswith("average"):
+                    break
+                wvl = float(line[0:10])
+                moog_species_id = line[10:20].strip()
+                expot = float(line[20:30])
+                loggf = float(line[30:40])
+                ewobs = float(line[40:50])
+                logREWobs = float(line[50:60])
+                abund = float(line[60:70])
+                delavg = float(line[70:80])
+                results.append(\
+                    {
+                        "wavelength": wvl,
+                        'expot': expot,
+                        'loggf': loggf,
+                        'moog_species_id': moog_species_id,
+                        'expot': expot,
+                        'loggf': loggf,
+                        'ewobs': ewobs,
+                        'logREWobs': logREWobs,
+                        'abund': abund,
+                    }
+                )
+                reading = False
+    return pandas.DataFrame.from_dict(results)
+
+
+def ewfind(linelist, run_id = '', workdir = '/tmp',
+    moog_mod_file = None, marcs_mod_file = None, 
+    teff = None, logg = None, feh = None, alphafe = None, 
+    feh_mod = None, alphafe_mod = None,
+    vt = None, 
+    default_gamma_vw = 3.,
+    species_vary = 0,
+    wmin = None, wmax = None,
+    dwvl_margin = 2.0,
+    dwvl_step = 0.01,
+    cog_ew_minmax = [-7,-4],
+    in_parallel = False,
+    addtime_stamp = True,
+    **kw_args):
+    '''
+    Run MOOG SYNTH to generate synthetic spectrum
+    see also moog.run_moog
+    
+    necessary parameters:
+        linelist: linelist file name or pandas DataFrame
+    
+    1. to specify abundance of an element, provide A_{proton_number} = log(N_X/N_H) + 12
+        e.g., A_6 = 8.43
+    2. to specify isotope ratio, provide I_{molecule id}_{isotope_id}
+        e.g., I_106_00113 = 0.01
+        Note that for consistency, the given isotope ratio will be multiplied to the original abundance,
+        i.e., which is the opposite to what is adopted in MOOG. 
+
+    If in_parallel is True, the calculation will be done in a temporary directory, and no log files will be saved.
+    This is to avoid accessing the same files in parallel runs.
+
+    See also moog.run_moog for other parameters    
+    '''
+    if addtime_stamp:
+        t0 = time.time()
+        tint = np.base_repr(int(t0),36)
+        t2 = int((t0 - int(t0))*1e2)
+        run_id += f"{tint:s}{t2:02d}"
+    if in_parallel:
+        tempdir = tempfile.TemporaryDirectory(dir=workdir)
+        workdir = tempdir.name
+        run_id = ""
+#        warnings.warn('run_id is ignored when in_parallel is True. The calculation will be done in a temporary directory, and no log files will be saved.')
+    #print(f'Running MOOG synth in {workdir}')
+    if isinstance(linelist,(dict,pandas.DataFrame)): 
+        # Create linelist if it is not a filename        
+        if type(linelist) is pandas.DataFrame: 
+            # Convert pandas DataFrame to dict
+            linelist = linelist.to_dict(orient='list')
+         # The following is done in run_moog 
+#        nlines = len(linelist['wavelength'])
+#        wvlline = np.array(linelist['wavelength'])
+#        wvlmin = np.min(linelist['wavelength'])
+#        wvlmax = np.max(linelist['wavelength'])
+    else:
+        # Read linelist if it is a filename
+        pass
+        # The following is done in run_moog 
+#        with open(linelist,'r') as f:
+#            lines = f.readlines()
+#            wvlline = np.array([float(line.split()[0]) for line in lines[1:]])
+#            wvlmin = np.min(wvlline)
+#            wvlmax = np.max(wvlline)
+#        nlines = len(lines)
+    result = run_moog('ewfind',linelist, run_id = run_id, workdir = workdir,
+                        moog_mod_file = moog_mod_file, marcs_mod_file = marcs_mod_file,
+                        teff = teff, logg = logg, feh = feh, alphafe = alphafe,
+                        feh_mod = feh_mod, alphafe_mod = alphafe_mod,
+                        vt = vt,
+                        default_gamma_vw = default_gamma_vw,
+                        species_vary = species_vary,
+                        dwvl_margin = dwvl_margin,
+                        dwvl_step = dwvl_step,
+                        cog_ew_minmax = cog_ew_minmax,
+                        wmin = wmin, wmax = wmax,
+                        **kw_args)
+    if in_parallel:
+#        print(workdir, os.path.exists(workdir))
+        tempdir.cleanup()
+    return result
+
+def abfind(linelist, run_id = '', workdir = '/tmp',
+    moog_mod_file = None, marcs_mod_file = None, 
+    teff = None, logg = None, feh = None, alphafe = None, 
+    feh_mod = None, alphafe_mod = None,
+    vt = None, 
+    default_gamma_vw = 3.,
+    species_vary = 0,
+    wmin = None, wmax = None,
+    dwvl_margin = 2.0,
+    dwvl_step = 0.01,
+    cog_ew_minmax = [-7,-4],
+    in_parallel = False,
+    addtime_stamp = True,
+    **kw_args):
+    '''
+    Run MOOG SYNTH to generate synthetic spectrum
+    see also moog.run_moog
+    
+    necessary parameters:
+        linelist: linelist file name or pandas DataFrame
+    
+    1. to specify abundance of an element, provide A_{proton_number} = log(N_X/N_H) + 12
+        e.g., A_6 = 8.43
+    2. to specify isotope ratio, provide I_{molecule id}_{isotope_id}
+        e.g., I_106_00113 = 0.01
+        Note that for consistency, the given isotope ratio will be multiplied to the original abundance,
+        i.e., which is the opposite to what is adopted in MOOG. 
+
+    If in_parallel is True, the calculation will be done in a temporary directory, and no log files will be saved.
+    This is to avoid accessing the same files in parallel runs.
+
+    See also moog.run_moog for other parameters    
+    '''
+    if addtime_stamp:
+        t0 = time.time()
+        tint = np.base_repr(int(t0),36)
+        t2 = int((t0 - int(t0))*1e2)
+        run_id += f"{tint:s}{t2:02d}"
+    if in_parallel:
+        tempdir = tempfile.TemporaryDirectory(dir=workdir)
+        workdir = tempdir.name
+        run_id = ""
+#        warnings.warn('run_id is ignored when in_parallel is True. The calculation will be done in a temporary directory, and no log files will be saved.')
+    #print(f'Running MOOG synth in {workdir}')
+    if isinstance(linelist,(dict,pandas.DataFrame)): 
+        # Create linelist if it is not a filename        
+        if type(linelist) is pandas.DataFrame: 
+            # Convert pandas DataFrame to dict
+            linelist = linelist.to_dict(orient='list')
+         # The following is done in run_moog 
+#        nlines = len(linelist['wavelength'])
+#        wvlline = np.array(linelist['wavelength'])
+#        wvlmin = np.min(linelist['wavelength'])
+#        wvlmax = np.max(linelist['wavelength'])
+    else:
+        # Read linelist if it is a filename
+        pass
+        # The following is done in run_moog 
+#        with open(linelist,'r') as f:
+#            lines = f.readlines()
+#            wvlline = np.array([float(line.split()[0]) for line in lines[1:]])
+#            wvlmin = np.min(wvlline)
+#            wvlmax = np.max(wvlline)
+#        nlines = len(lines)
+    assert "ew" in linelist.keys(), "linelist must have 'ew' column for abfind driver"
+    result = run_moog('abfind',linelist, run_id = run_id, workdir = workdir,
+                        moog_mod_file = moog_mod_file, marcs_mod_file = marcs_mod_file,
+                        teff = teff, logg = logg, feh = feh, alphafe = alphafe,
+                        feh_mod = feh_mod, alphafe_mod = alphafe_mod,
+                        vt = vt,
+                        default_gamma_vw = default_gamma_vw,
+                        species_vary = species_vary,
+                        dwvl_margin = dwvl_margin,
+                        dwvl_step = dwvl_step,
+                        cog_ew_minmax = cog_ew_minmax,
+                        wmin = wmin, wmax = wmax,
+                        **kw_args)
+    if in_parallel:
+#        print(workdir, os.path.exists(workdir))
+        tempdir.cleanup()
+    return result
 
         
 def synth(linelist, run_id = '', workdir = '/tmp',
