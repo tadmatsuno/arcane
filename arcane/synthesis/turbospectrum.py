@@ -311,11 +311,13 @@ def write_linelist(linelist, flinelist, ignore_isotope=True, default_dampnum=2.5
             for sp in species_unique:
                 mask = species_arr == sp
                 atoms, zz, ion = get_atom_num(sp)
-                linelist["Z1"][mask] = zz[0]
-                linelist["Z2"][mask] = zz[1]
-                linelist["Z3"][mask] = zz[2]
-                linelist["Z4"][mask] = zz[3]
-                linelist["Z5"][mask] = zz[4]
+                zin = np.zeros(5,dtype=int)
+                zin[:len(zz)] = zz
+                linelist["Z1"][mask] = zin[0]
+                linelist["Z2"][mask] = zin[1]
+                linelist["Z3"][mask] = zin[2]
+                linelist["Z4"][mask] = zin[3]
+                linelist["Z5"][mask] = zin[4]
                 linelist["ion"][mask] = ion
         # Now everythiing should have Z1..Z5 and ion
         assert "ion" in linelist.keys(), "ion needs to be in linelist keys"
