@@ -359,7 +359,7 @@ def write_linelist(linelist, flinelist, ignore_isotope=True, default_dampnum=2.5
     else:
         loggam_rad = np.ones(len(linelist["wavelength"])) * default_loggamrad
     if not "gamma_stark" in linelist.keys():
-        linelist["gamma_stark"] = 0.0
+        linelist["gamma_stark"] = np.zeros(len(linelist["wavelength"]))
     if not "ew" in linelist.keys():
         linelist["ew"] = np.zeros(len(linelist["wavelength"]))
     if not "ew_err" in linelist.keys():
