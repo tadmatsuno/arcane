@@ -24,14 +24,20 @@ class SpectraGrid:
             self.interpolator = Akima1DInterpolator(values_in, fluxes_in, extrapolate=True)
             if self.ews is not None:
                 ews_in = self.ews[sortidx]
-                sortidx2 = np.argsort(ews_in)
+                flux_diff = self.no_line_flux - fluxes_in
+#                sortidx2 = np.argsort(ews_in)
                 unique_ew, index_unique_ew = np.unique(ews_in, return_index=True)
-                flux_in_ew = fluxes_in[sortidx2][index_unique_ew]
+                remove0_mask = unique_ew != 0.0
+                unique_ew = unique_ew[remove0_mask]
+                index_unique_ew = index_unique_ew[remove0_mask]
+                flux_diff_ew = flux_diff[index_unique_ew]
+                values_in_ew = values_in[index_unique_ew]
                 ews = np.hstack([-unique_ew[::-1],0.0,unique_ew])
-                fluxes = np.vstack([flux_in_ew[::-1,:], self.no_line_flux, flux_in_ew])
-                self.ew2flux = Akima1DInterpolator(ews, fluxes, extrapolate=True)
-                self.ew2input = Akima1DInterpolator(ews_in, values_in)
-                self.input2ew = Akima1DInterpolator(values_in, ews_in)
+                fluxes_diff_full = np.vstack([-flux_diff_ew[::-1,:], np.zeros_like(flux_diff_ew[0:1,:]), flux_diff_ew])
+                fluxes_in_ew = self.no_line_flux - fluxes_diff_full 
+                self.ew2flux =  Akima1DInterpolator(ews, fluxes_in_ew, extrapolate=True)
+                self.ew2input = Akima1DInterpolator(unique_ew, values_in_ew)
+                self.input2ew = Akima1DInterpolator(values_in_ew, unique_ew)
             if self.no_line_flux is not None:
                 if depth_wr_range is not None:
                     wr_min, wr_max = depth_wr_range
@@ -161,8 +167,8 @@ def construct_grid(fsynth, parameters_name, values,
         labels = [labels]    
     assert len(labels) == ndim, "Length of labels should be the same as the dimension of grid_values"
     
-    if np.ndim(values)==1:
-        values = np.array(values).reshape(-1,1)
+    if len(parameters_name) == 1:
+        values = [[v] for v in values]
 
     if parallel:
         inputs = [dict({name: v for v,name in zip(vv,parameters_name)}, in_parallel = True, **kwargs) for vv in values]
