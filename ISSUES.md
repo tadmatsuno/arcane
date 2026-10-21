@@ -1,5 +1,16 @@
 # Repository bug audit
 
+## Fixed: multi-file synthesis uses only the first line list's wavelength limits
+
+- Turbospectrum filled missing limits inside the first iteration, skipping
+  wavelength inference for subsequent line lists. This silently excluded lines
+  outside the first file's range and made the result depend on file order.
+- Infer missing limits from the union of every supplied file. Explicit lower
+  and upper bounds retain precedence independently.
+- Validation: `test/test_ts_multiple_linelist_windows.py` reproduces truncation
+  in both file orders and with either bound supplied, then checks real synthesis
+  over the correct union and preservation of fully explicit limits.
+
 ## Fixed: masked samples change synthetic-line bin widths during fitting
 
 - Curve fitting evaluated synthetic spectra only at the retained wavelengths.
