@@ -12,6 +12,18 @@
   shifts and widths, fixed widths, and fitting after adding/removing lines.
   All three tests failed before the fix and pass afterward.
 
+## Fixed: MOOG utilities require optional atmosphere installations at import
+
+- Importing `moog` eagerly imported MARCS and AVG3D, which immediately load
+  external grids and a user configuration file. This prevented output parsing
+  and species conversion in a fresh environment.
+- Load the requested atmosphere module only when generating or reading an
+  atmosphere through that module. Missing MOOG configuration now follows the
+  existing unconfigured-path behavior. Invalid JSON still raises an error.
+- Validation: `test/test_moog_imports.py` imports in a fresh subprocess with a
+  nonexistent configuration and verifies species conversion without loading
+  either atmosphere module.
+
 ## Scope
 
 This audit follows `Agents.md` and preserves the public APIs. The feature ideas
