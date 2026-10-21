@@ -13,6 +13,7 @@ import pandas
 import json
 import time
 import subprocess
+from importlib import import_module
 
 ts_default_input = {# Combination of the input name for the python interface, that for turbospectrum input, and the default value
     "INTENSITY_FLUX":('INTENSITY/FLUX','Flux'),
@@ -446,7 +447,6 @@ def run_turbospectrum(mode,
     mode : str
         'babsma', 'syn'
     '''
-    mdlatm = globals()[mdlatm_io]
     cwd = os.getcwd()
     
     if wmin is None:
@@ -510,6 +510,7 @@ def run_turbospectrum(mode,
     flog = os.path.abspath(os.path.join(workdir, f"ts_{run_id}.log"))
  
     if (mode == 'babsma'):
+        mdlatm = import_module(f'arcane.mdlatm.{mdlatm_io}')
         # In case of babsma, we can use the MARCS model file or create it from stellar parameters
         if not marcs_mod_file is None:
             assert os.path.exists(marcs_mod_file),'marcs_mod_file specified does not exist'
@@ -517,7 +518,7 @@ def run_turbospectrum(mode,
                 warnings.warn(
                     'MARCS model file is directly provided. '+\
                     'Teff, logg, [Fe/H]_mod, and [alpha/Fe]_mod will be ignored')
-            model = marcs.read_marcs(marcs_mod_file)
+            model = mdlatm.read_model(marcs_mod_file)
         else:
             if feh_mod is None:
                 feh_mod = feh
@@ -525,9 +526,13 @@ def run_turbospectrum(mode,
                 alphafe_mod = alphafe
             if any([val is None for val in [teff, logg, feh_mod, vt]]):
                 raise ValueError('At least four parameters, teff, logg, feh_mod,vt are needed')
-            model = marcs.get_marcs_mod(teff, logg, feh_mod, \
+            model = mdlatm.get_model(teff, logg, feh_mod, \
                 alphafe=alphafe_mod, outofgrid_error=True)
-            marcs.write_marcs(fmodelin,model)
+            if mdlatm_io == 'marcs':
+                model.write(fmodelin)
+        if mdlatm_io == 'avg3d':
+            fmodelin = os.path.abspath(os.path.join(workdir, f"stagger_{run_id}.mod"))
+            mdlatm.write_stagger(fmodelin, model)
         if feh is None:
             feh = model['m_h']
         if alphafe is None:
@@ -544,6 +549,8 @@ def run_turbospectrum(mode,
             assert isospecies is str, 'Isotope_dict keys should be str'
             isotopes[isospecies] = kw_args["Isotope_dict"][isospecies]
     ts_input = {value[0]: value[1] for value in ts_default_input.values()}
+    if mode == 'babsma' and mdlatm_io == 'avg3d':
+        ts_input['MARCS-FILE'] = False
     ts_input["LAMBDA_MIN"] = wmin
     ts_input["LAMBDA_MAX"] = wmax
     ts_input["LAMBDA_STEP"] = float(dwvl_step)
@@ -641,6 +648,9 @@ def run_turbospectrum(mode,
     result_dict = {}
     if mode == 'babsma':
         result_dict["model"] = fmodelin
+        result_dict["spherical"] = model['geometry'] == 'spherical'
+        result_dict["feh"] = feh
+        result_dict["alphafe"] = alphafe
         result_dict["opac_file"] = ts_opac_file
         result_dict["command_file"] = fcommand
         result_dict["log_file"] = flog
@@ -774,6 +784,12 @@ def synth(linelist=None, run_id='', workdir='/tmp',
             **kw_args)
         ts_opac_file = result_babsma["opac_file"]
         marcs_mod_file = result_babsma["model"]
+        if spherical is None:
+            spherical = result_babsma['spherical']
+        if feh is None:
+            feh = result_babsma['feh']
+        if alphafe is None:
+            alphafe = result_babsma['alphafe']
     
     # Get info about whether the model atmosphere is spherical or not
     if spherical is None:
