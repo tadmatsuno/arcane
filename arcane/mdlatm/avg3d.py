@@ -3,6 +3,7 @@ import pandas
 import shapely
 from arcane.utils import utils
 from scipy.io import readsav
+from scipy.integrate import cumulative_trapezoid
 import os
 import warnings
 from astropy.constants import N_A
@@ -181,6 +182,29 @@ def write_avg3d(filename,model):
         for i in range(model['ndepth']):
             f.write(f"{model['lgTauR'][i]:.6e} {model['T'][i]:.2f} {model['Pg'][i]:.6e} {model['Pe'][i]:.6e} {model['Mu'][i]:.6e} {model['AlphaTauR'][i]:.6e} {model['KappaRoss'][i]:.6e} {model['Density'][i]:.6e} {model['Pturb'][i]:.6e} {model['Prad'][i]:.6e}\n")
     
+def write_stagger(filename, model):
+    """Write Turbospectrum's native Stagger depth/temperature/density format.
+
+    Recover geometrical depth in cm from d(tau_R) = AlphaTauR * dz.
+    Turbospectrum recomputes the reference optical depth and equation of state
+    from this structure; Rosseland depth is not substituted for tau_5000.
+    """
+    logtau = np.asarray(model['lgTauR'])
+    extinction = np.asarray(model['AlphaTauR'])
+    if (len(logtau) < 2 or not np.all(np.isfinite(logtau)) or
+            not np.all(np.diff(logtau) > 0) or
+            not np.all(np.isfinite(extinction) & (extinction > 0))):
+        raise ValueError('Stagger export requires increasing optical depths and positive extinction')
+    # Integrating in log(tau) avoids poorly sampling decades in optical depth.
+    depth = cumulative_trapezoid(
+        np.log(10.) * 10.**logtau / extinction, logtau, initial=0.,
+    )
+    with open(filename, 'w') as stream:
+        stream.write(f"Stagger {model['ndepth']} 5000. {model['logg']} 0 0\n")
+        stream.write(f"{model['teff']} {model['logg']} {model['m_h']} {model['ndepth']}\n")
+        np.savetxt(stream, np.column_stack([depth, model['T'], model['Density']]), fmt='%.12e')
+
+
 def read_avg3d(filename):
     '''
     Read in a model atmosphere in my format
@@ -231,6 +255,8 @@ def read_avg3d(filename):
         for j,col in enumerate(columns):
             model[col][i] = values[j]
     return model
+
+read_model = read_avg3d
 
 class Avg3d(ModelAtm):
     '''

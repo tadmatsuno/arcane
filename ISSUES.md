@@ -53,6 +53,21 @@ This audit follows `Agents.md` and preserves the public APIs. The feature ideas
 in `TODO` (batch configuration, detection limits, correction grids, and additional
 synthesis engines) remain future work; they are not implemented by these fixes.
 
+## Fixed: Turbospectrum cannot use the AVG3D grid
+
+- An integration probe reproduced `KeyError: 'avg3d'` despite accepting the
+  `mdlatm_io` parameter. The wrapper also hardcoded MARCS retrieval and export.
+- Select the requested atmosphere reader and grid. Export AVG3D through
+  Turbospectrum's native Stagger depth/temperature/density format, reconstructing
+  geometrical depth from the grid's Rosseland extinction. Turbospectrum then
+  computes its own reference-wavelength optical depths and equation of state.
+  This uses the averaged atmosphere, not a full 3D synthesis calculation.
+- Propagate metallicity, alpha abundance, and geometry from opacity generation
+  into synthesis. Saved AVG3D atmosphere files can also be used.
+- Validation: real synthesis and abundance-response checks with both programs
+  and both grids, saved AVG3D synthesis, and an analytic depth-export check in
+  `test/test_synthesis_atmospheres.py`. Existing synthesis/model tests pass.
+
 ## Reproducing validation
 
 Dependencies were installed with `uv pip install --python .venv/bin/python -r
@@ -67,8 +82,12 @@ PYTHONPATH=test MPLCONFIGDIR=/tmp/arcane-mpl .venv/bin/python -m unittest \
   test_grid_regressions test_moog_imports test_moog_summary -v
 ```
 
-The full integration suite requires external MOOG/Turbospectrum executables and
-atmosphere grids configured in `~/.arcanesrc`; those are not installed in this
-environment. The fixes here are verified without those external programs.
+The integration tests require external MOOG/Turbospectrum executables and
+atmosphere grids configured in `~/.arcanesrc`. These are now configured and tested:
+
+```sh
+PYTHONPATH=test MPLCONFIGDIR=/tmp/arcane-mpl .venv/bin/python -m unittest \
+  test_synthesis_atmospheres test_modelatm test_moog test_ts -v
+```
 
 Result: all 35 tests in the command above pass. `git diff --check` also passes.
