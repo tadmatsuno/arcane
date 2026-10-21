@@ -42,18 +42,22 @@ class SpectraGrid:
                 if depth_wr_range is not None:
                     wr_min, wr_max = depth_wr_range
                     wl_mask = (self.wavelength >= wr_min) & (self.wavelength <= wr_max)
+                    if not np.any(wl_mask):
+                        raise ValueError('depth_wr_range contains no grid wavelengths')
                 else:
                     wl_mask = np.ones_like(self.wavelength, dtype=bool)
                     
                 flux_diff = self.no_line_flux - fluxes_in
-                flux_diff_mask = np.where(wl_mask,self.no_line_flux - fluxes_in,-1e5)
+                flux_diff_mask = np.where(wl_mask,self.no_line_flux - fluxes_in,-np.inf)
                 idxmax = np.argmax(np.median(flux_diff_mask, axis=0))
                 depths0 = flux_diff[:, idxmax]
                 # I need to make sure depths0 is strictly increasing for Akima1DInterpolator
                 # Cut out decreasing parts
-                increasing_idx = np.nonzero(np.diff(depths0) > 0)[0] + 1
-                increasing_idx = np.hstack([0, increasing_idx]) 
+                previous_max = np.maximum.accumulate(depths0)
+                increasing_idx = np.flatnonzero(np.r_[True, depths0[1:] > previous_max[:-1]])
                 increasing_idx = increasing_idx[depths0[increasing_idx]>0]
+                if len(increasing_idx) < 2:
+                    raise ValueError('At least two positive increasing depth samples are required')
 #                print(depths0)
                 depths0 = depths0[increasing_idx]
 #                print(depths0)

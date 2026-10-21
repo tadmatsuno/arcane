@@ -35,8 +35,40 @@
   abundance rows and species, valid synthesis output, and missing headers.
   Both multi-row tests reproduced lost rows before the fix.
 
+## Fixed: depth grids are not guaranteed to be monotonic
+
+- The inverse depth grid removed points only when shallower than their immediate
+  neighbor. A sequence such as `0.1, 0.4, 0.2, 0.3, 0.5` still contained a decrease
+  after filtering and crashed the interpolator. Retain only increasing maxima.
+- Reject depth windows containing no grid wavelengths, rather than silently
+  selecting a wavelength outside the window. Report a clear error when fewer
+  than two positive increasing depth samples remain.
+- Validation: `test/test_grid_regressions.py` reproduces the nonmonotonic crash,
+  checks positive and negative depth interpolation, and checks invalid windows
+  and insufficient depth samples.
+
 ## Scope
 
 This audit follows `Agents.md` and preserves the public APIs. The feature ideas
 in `TODO` (batch configuration, detection limits, correction grids, and additional
 synthesis engines) remain future work; they are not implemented by these fixes.
+
+## Reproducing validation
+
+Dependencies were installed with `uv pip install --python .venv/bin/python -r
+requirements.txt` in a virtual environment created with
+`uv venv --python /usr/bin/python3 .venv` (Python 3.12).
+
+Run the regression tests and existing VALD/species-conversion tests with:
+
+```sh
+PYTHONPATH=test MPLCONFIGDIR=/tmp/arcane-mpl .venv/bin/python -m unittest \
+  test_vald test_get_moog_species test_line_profile_regressions \
+  test_grid_regressions test_moog_imports test_moog_summary -v
+```
+
+The full integration suite requires external MOOG/Turbospectrum executables and
+atmosphere grids configured in `~/.arcanesrc`; those are not installed in this
+environment. The fixes here are verified without those external programs.
+
+Result: all 35 tests in the command above pass. `git diff --check` also passes.
