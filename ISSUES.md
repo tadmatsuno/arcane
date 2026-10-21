@@ -1,5 +1,16 @@
 # Repository bug audit
 
+## Fixed: continuum fitting crashes when observations are binned
+
+- Deterministic-update and residual-based fits evaluated the line model on
+  binned wavelengths, then divided the original unbinned flux by that shorter
+  array while estimating the continuum. With `naverage > 1` this raised a shape
+  mismatch instead of fitting.
+- Evaluate the line model on the raw wavelengths for continuum estimation,
+  matching the existing curve-fit path. The line fit still uses binned samples.
+- Validation: `test/test_binned_continuum_fitting.py` reproduces both failing
+  paths and verifies recovered depth, continuum, and finite fitted flux.
+
 ## Fixed: atmosphere interpolation mutates inputs and mishandles depth overlap
 
 - Resampling changed the second input atmosphere in place and left the first

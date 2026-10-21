@@ -251,7 +251,7 @@ class ModelBase:
                 if continuum_model is not None:
                     if debug:
                         print("Fitting with continuum model using minimize")
-                    youter = self(wvl)
+                    youter = self(wavelength)
                     result_continuum = continuum_model.fit(wavelength, flux / youter, debug=debug)
                     flx_in /= continuum_model(wvl[use_flag])
                 elif debug:
@@ -270,7 +270,7 @@ class ModelBase:
                 if continuum_model is not None:
                     if debug:
                         print("Fitting with continuum model using update (deterministic)")
-                    youter = self(wvl)
+                    youter = self(wavelength)
                     result_continuum = continuum_model.fit(wavelength, flux / youter, debug=debug)
                     flx_in /= continuum_model(wvl[use_flag])
                 elif debug:
