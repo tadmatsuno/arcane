@@ -1,5 +1,17 @@
 # Repository bug audit
 
+## Approved performance improvement: reduce rebinning scans
+
+- Compute the finite-flux mask once and avoid copying already finite inputs.
+  Reuse source differences and skip gap-threshold medians when gap masking is
+  disabled. Find output ranges with binary search and write contiguous slices
+  rather than constructing and scanning a full output mask for every chunk.
+- Chunks with no output overlap are skipped; fully nonoverlapping output is
+  zero rather than raising an indexing error.
+- Validation: exact agreement with the pre-optimization implementation across
+  16 combinations of count/flux modes, NaNs, finite gaps, and chunk sizes.
+  Independent pixel-overlap integration and gap/coverage tests also pass.
+
 ## Approved performance improvement: reuse smoothing geometry
 
 - Removed unused Python min/max scans and calculations for the inactive
