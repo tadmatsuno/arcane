@@ -791,12 +791,17 @@ class LineSynth(ModelBase):
         if getattr(self, '_smoothing_plan', None) is None or not np.array_equal(wvl, self._synthesis_wavelength):
             self._synthesis_wavelength = wvl.copy()
             self._smoothing_plan = utils.SmoothingPlan(wvl)
+            self._rebin_plans = []
         smoothed = self._smoothing_plan(flux, model_parameters['vFWHM'])
-        flx_out =utils.rebin(wvl * (1.0 + model_parameters['rv'] / ckm), # Doppler shift
-            smoothed, 
-            xx,
-            conserve_count=False)    
-        return flx_out
+        plans = getattr(self, '_rebin_plans', [])
+        for plan in plans:
+            if plan.matches_target(xx):
+                break
+        else:
+            plan = utils.RebinPlan(wvl, xx, conserve_count=False)
+            # A joint continuum fit can alternate between raw and binned grids.
+            self._rebin_plans = (plans+[plan])[-2:]
+        return plan(smoothed, wavelength_scale=1.0+model_parameters['rv']/ckm)
 
     def func_model(self, wvl, *xi):
         model_parameters = self.model_parameters.copy()
@@ -871,6 +876,7 @@ class LineSynth(ModelBase):
         self.fsynth = fsynth
         self._smoothing_plan = None
         self._synthesis_wavelength = None
+        self._rebin_plans = []
         self.synth_parameter_names = list(synth_parameters.keys())
         self.model_parameters = {'vFWHM':vfwhm_in, "rv":rv_in,**synth_parameters}
         for key in parameters_to_fit:
