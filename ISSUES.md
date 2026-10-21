@@ -53,6 +53,12 @@ This audit follows `Agents.md` and preserves the public APIs. The feature ideas
 in `TODO` (batch configuration, detection limits, correction grids, and additional
 synthesis engines) remain future work; they are not implemented by these fixes.
 
+## Fixed: fitting tests override the configured MOOG executable
+
+- Importing `test_fitting.py` attempted to replace the configured executable with
+  an obsolete `/mnt/d/...` path, preventing the fitting tests from running and
+  potentially rewriting user configuration. Use the existing configured path.
+
 ## Fixed: synthesis working directories and MOOG log isolation
 
 - Both synthesis wrappers failed when a requested working directory did not
