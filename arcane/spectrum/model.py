@@ -787,7 +787,11 @@ class LineSynth(ModelBase):
         wvl, flux = self.fsynth(**{\
             key: model_parameters[key] for key in self.synth_parameter_names}
         )
-        smoothed = utils.smooth_spectrum(wvl, flux, model_parameters['vFWHM'])
+        wvl = np.asarray(wvl)
+        if getattr(self, '_smoothing_plan', None) is None or not np.array_equal(wvl, self._synthesis_wavelength):
+            self._synthesis_wavelength = wvl.copy()
+            self._smoothing_plan = utils.SmoothingPlan(wvl)
+        smoothed = self._smoothing_plan(flux, model_parameters['vFWHM'])
         flx_out =utils.rebin(wvl * (1.0 + model_parameters['rv'] / ckm), # Doppler shift
             smoothed, 
             xx,
@@ -865,6 +869,8 @@ class LineSynth(ModelBase):
             naverage = naverage, fit_mode = fit_mode,
             samples = samples, std_from_central = std_from_central)
         self.fsynth = fsynth
+        self._smoothing_plan = None
+        self._synthesis_wavelength = None
         self.synth_parameter_names = list(synth_parameters.keys())
         self.model_parameters = {'vFWHM':vfwhm_in, "rv":rv_in,**synth_parameters}
         for key in parameters_to_fit:

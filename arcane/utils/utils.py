@@ -558,30 +558,44 @@ def get_grid_value(grid_points,target, outside='nearest'):
   p1 = np.max(grid_points[grid_points<target])
   return p1,p2,True
 
+class SmoothingPlan:
+  """Reusable Gaussian smoothing geometry for a fixed wavelength grid.
+
+  Construct a new plan when the wavelength grid changes. Flux and FWHM may
+  change on every call; padding and the 10-sigma kernel match smooth_spectrum.
+  """
+  def __init__(self, wvl, fwhm_vel=True):
+    wvl = np.asarray(wvl)
+    self.fwhm_vel = fwhm_vel
+    spacing = np.diff(wvl)
+    if fwhm_vel:
+      spacing = spacing/(0.5*(wvl[1:]+wvl[:-1]))
+    self.nonuniform = np.abs((np.max(spacing)-np.min(spacing))/np.min(spacing)) > 0.1
+    self.spacing = np.median(spacing) * (ckm if fwhm_vel else 1.0)
+    if self.nonuniform and fwhm_vel:
+      self.bounds = (np.min(wvl), np.max(wvl))
+
+  def __call__(self, flx, vfwhm):
+    if self.nonuniform:
+      if self.fwhm_vel:
+        print('The wavelength varies more than 10%. If you intend to smooth a spectrum with '+
+              'a constant FWHM in velocity, it is highly recommended to rebin the spectrum  '+
+              'to have a constant interval in log(wavelength)'+
+              f'You are trying to smooth a spectrum from {self.bounds[0]:.1f} to {self.bounds[1]:.1f} with a velocity of {vfwhm:.2f}.')
+      else:
+        print('If you intend to smooth a spectrum with a constant FWHM in wavelength, it is '+
+              'highly recommended to rebin the spectrum to have a constant interval in linear'
+              'wavelength')
+    if self.fwhm_vel:
+      psigma = (vfwhm/g1)/self.spacing
+    else:
+      psigma = vfwhm/(g1*self.spacing)
+    return gaussian_filter(flx, psigma, mode='constant', cval=1.0, truncate=10.0)
+
+
 def smooth_spectrum(wvl,flx,vfwhm,fwhm_vel=True):
-  """Gaussian smoothing with FWHM in km/s, or wavelength units if fwhm_vel=False."""
-  wvlmin,wvlmax = min(wvl),max(wvl)
-  wc = (wvlmin+wvlmax)/2.0
-  dwvl = wvl[1:]-wvl[:-1]
-  dwvlowvl = dwvl/(0.5*(wvl[1:]+wvl[:-1]))
-  if (np.abs((np.max(dwvlowvl)-np.min(dwvlowvl))/np.min(dwvlowvl)) > 0.1) & fwhm_vel :
-    print('The wavelength varies more than 10%. If you intend to smooth a spectrum with '+\
-          'a constant FWHM in velocity, it is highly recommended to rebin the spectrum  '+\
-          'to have a constant interval in log(wavelength)'+\
-          f'You are trying to smooth a spectrum from {np.min(wvl):.1f} to {np.max(wvl):.1f} with a velocity of {vfwhm:.2f}.')
-    
-  if (np.abs((np.max(dwvl)-np.min(dwvl))/np.min(dwvl)) > 0.1) & (not fwhm_vel):
-    print('If you intend to smooth a spectrum with a constant FWHM in wavelength, it is '+\
-          'highly recommended to rebin the spectrum to have a constant interval in linear'
-          'wavelength')
-#  dvel = (wvlmax-wvlmin)/(len(wvl)-1.0)/wc*ckm
-  if fwhm_vel:
-    dvel = np.median(dwvlowvl)*ckm
-    vsigma = vfwhm/ (np.sqrt(8.0*np.log(2)))
-    psigma = vsigma/dvel
-    flout = gaussian_filter(flx,psigma,mode='constant',cval=1.0,truncate=10.0)
-    return flout
-  else:
-    psigma = vfwhm / (np.sqrt(8.0*np.log(2)) * np.median(dwvl))
-    flout = gaussian_filter(flx,psigma,mode='constant',cval=1.0,truncate=10.0)
-    return flout
+  """Gaussian smoothing with FWHM in km/s, or wavelength units if fwhm_vel=False.
+
+  Use SmoothingPlan to reuse the spacing calculation for a fixed grid.
+  """
+  return SmoothingPlan(wvl, fwhm_vel=fwhm_vel)(flx, vfwhm)
