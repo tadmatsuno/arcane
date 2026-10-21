@@ -1,5 +1,21 @@
 # Repository bug audit
 
+## Fixed: uncertainty estimation lacks fitting data and alters the original fit
+
+- `fit` did not retain the observations required by `uncertainty`, which raised
+  `AttributeError`. Supplying those attributes manually exposed another bug:
+  uncertainty refits changed the original model, and rebinding local `self`
+  could not restore it.
+- Retain independent copies of the raw observations, continuum, and optimizer
+  settings after fitting. Refit an independent model copy for each uncertainty
+  sample, keeping the original state intact even when a callback fails.
+- Raw sampling prevents repeated binning. Missing data and zero independent-
+  noise samples now produce descriptive errors. Manual wavelength/flux inputs
+  and the six deterministic continuum offsets remain supported.
+- Validation: `test/test_uncertainty.py` checks deterministic continuum offsets,
+  independent pixel noise, original-state preservation, copied raw data and
+  binned refits, continuum reuse, callback failure, and invalid requests.
+
 ## Fixed: wavelength-based smoothing ignores its requested FWHM
 
 - With `fwhm_vel=False`, smoothing used wavelength spacing itself as a Gaussian
