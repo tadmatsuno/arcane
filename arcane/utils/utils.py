@@ -114,18 +114,23 @@ def rebin(x, y, xnew, conserve_count=True, nchunk_max = 1000000, npix_mask_crite
   '''
   x0 = np.asarray(x)
   y0 = np.asarray(y)
-  x = x0[np.isfinite(y0)]
-  y = y0[np.isfinite(y0)]
-  assert np.all(np.diff(x)>0), "x has to be in ascending order"
-  assert np.all(np.diff(xnew)>0), "xnew has to be in ascending order"
-
+  finite = np.isfinite(y0)
+  if np.all(finite):
+    x, y = x0, y0
+  else:
+    x, y = x0[finite], y0[finite]
   xnew = np.asarray(xnew)
+  delx = np.diff(x)
+  assert np.all(delx>0), "x has to be in ascending order"
+  assert np.all(np.diff(xnew)>0), "xnew has to be in ascending order"
   
   xnew_edges, dxnew = get_edges_dx(xnew)
   yout = np.zeros(len(xnew))
 
-  delx = np.diff(x)
-  delx_large = np.concatenate([np.nonzero(delx > npix_mask_criterion*np.median(delx))[0], [len(delx)-1]])
+  if npix_mask_criterion == np.inf:
+    delx_large = [len(delx)-1]
+  else:
+    delx_large = np.concatenate([np.nonzero(delx > npix_mask_criterion*np.median(delx))[0], [len(delx)-1]])
   
   i0 = 0
   for i in range(len(delx_large)):
@@ -135,20 +140,18 @@ def rebin(x, y, xnew, conserve_count=True, nchunk_max = 1000000, npix_mask_crite
       i1 = np.minimum(i1, delx_large[i]+1)
       x_in = x[i0:i1]
       y_in = y[i0:i1]
-      x_edges, dx = get_edges_dx(x_in)
-      if conserve_count: # total count conserved (input is per pix)
+      j0 = np.searchsorted(xnew, x_in[0], side='left')
+      j1 = np.searchsorted(xnew, x_in[-1], side='right')
+      if j0 < j1:
+        x_edges, dx = get_edges_dx(x_in)
+        if conserve_count: # total count conserved (input is per pix)
           fxdx = y_in
-      else:
+        else:
           fxdx = y_in * dx
-      
-      cdf = np.concatenate([[0.0], np.cumsum(fxdx)])
-      
-      new_mask = (x_in[0] <= xnew) & (xnew <= x_in[-1])
-      j0 = np.nonzero(new_mask)[0][0]
-      j1 = np.nonzero(new_mask)[0][-1]+1
-      cdf_new = np.interp(xnew_edges[j0:j1+1], x_edges, cdf,
+        cdf = np.concatenate([[0.0], np.cumsum(fxdx)])
+        cdf_new = np.interp(xnew_edges[j0:j1+1], x_edges, cdf,
             left=0.0, right=cdf[-1])
-      yout[new_mask] = np.diff(cdf_new)
+        yout[j0:j1] = np.diff(cdf_new)
       i0 = i1 -1
     i0 = i1
     
