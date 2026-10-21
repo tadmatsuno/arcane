@@ -565,19 +565,16 @@ class LineProfile(ModelBase):
         # FWHM
         if self.fit_control['share_fwhm']:
             if not all(self.fit_control['fix_fwhm']): # If fwhm is fixed for all the lines nothing will be done
-                for ii in range(self.nlines):
-                    xi_map_tmp = 'fwhm_'
-                    for ii in range(self.nlines):
-                        if not self.fit_control['fix_fwhm'][ii]:
-                            xi_map_tmp += f'{ii}'
-                    xi_map.append(xi_map_tmp[:-1])
-                    if self.fit_control['constrain_gaussian']:
-                        x0.append(self.model_parameters['fwhm'][0]*\
-                            self.model_parameters['fgfwhm'][0])
-                    else:
-                        x0.append(self.model_parameters['fwhm'][0])
-                    const_low.append(self.fit_control['min_fwhm'])
-                    const_high.append(self.fit_control['max_fwhm'])
+                indices = np.flatnonzero(~self.fit_control['fix_fwhm'])
+                xi_map.append('fwhm_' + ','.join(str(ii) for ii in indices))
+                first = indices[0]
+                if self.fit_control['constrain_gaussian']:
+                    x0.append(self.model_parameters['fwhm'][first]*\
+                        self.model_parameters['fgfwhm'][first])
+                else:
+                    x0.append(self.model_parameters['fwhm'][first])
+                const_low.append(self.fit_control['min_fwhm'])
+                const_high.append(self.fit_control['max_fwhm'])
         else:
             for ii in range(self.nlines):
                 if not self.fit_control['fix_fwhm'][ii]:
@@ -636,19 +633,25 @@ class LineProfile(ModelBase):
         
     # I don't think it is a bad idea to return the updated model_parameters in the following methods
     def delete_line(self,idx):
-        self.nlines -= 1
-        self.model_parameters['center'] = np.delete(self.model_parameters['center'],idx)
-        self.model_parameters['dwvl'] = np.delete(self.model_parameters['dwvl'],idx)
-        self.model_parameters['fwhm'] = np.delete(self.model_parameters['fwhm'],idx)
-        self.model_parameters['fgfwhm'] = np.delete(self.model_parameters['fgfwhm'],idx)
+        for key in ('center', 'dwvl', 'depth', 'fwhm', 'fgfwhm'):
+            self.model_parameters[key] = np.delete(self.model_parameters[key],idx)
+        for key in ('fix_dwvl', 'fix_fwhm', 'voigt'):
+            self.fit_control[key] = np.delete(self.fit_control[key],idx)
+        self.nlines = len(self.model_parameters['center'])
         return self.model_parameters
 
     def _add_line_base(self):
         self.nlines +=1 
         self.model_parameters['center'] = np.append(self.model_parameters['center'],0.0)
         self.model_parameters['dwvl'] = np.append(self.model_parameters['dwvl'],0.0)
+        self.model_parameters['depth'] = np.append(self.model_parameters['depth'],self.initial_depth)
         self.model_parameters['fwhm'] = np.append(self.model_parameters['fwhm'],self.initial_fwhm)
         self.model_parameters['fgfwhm'] = np.append(self.model_parameters['fgfwhm'],1.0)
+        # New lines inherit the last line's controls, or defaults for an empty model.
+        for key in ('fix_dwvl', 'fix_fwhm', 'voigt'):
+            controls = self.fit_control[key]
+            value = controls[-1] if len(controls) else self.default_fit_control[key]
+            self.fit_control[key] = np.append(controls,value)
         return self.model_parameters
 
     def add_line(self, central_wavelength, depth, sigma, gamma):
