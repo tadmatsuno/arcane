@@ -106,11 +106,14 @@ def interp_model2(model1,model2,w2,alpha={},\
   if len(tauR1)==len(tauR2):
     if np.all(tauR1==tauR2):
       is_resample = False
-      model_new['lgTauR'] = tauR1
+      model_new['lgTauR'] = tauR1.copy()
   if is_resample:
     print('Resampling required')
     model_new['lgTauR'] = tauR1[(np.min(tauR2)<=tauR1)&(tauR1<=np.max(tauR2))]
-    model2.resample_model(model_new['lgTauR'], inplace=True)
+    if len(model_new['lgTauR']) < 2:
+      raise ValueError('At least two common optical-depth points are required')
+    model1 = model1.resample_model(model_new['lgTauR'])
+    model2 = model2.resample_model(model_new['lgTauR'])
   model_new['ndepth'] = len(model_new['lgTauR'])
 
   def get_weight(key):
@@ -136,8 +139,8 @@ def interp_model2(model1,model2,w2,alpha={},\
         model_new[key][key2] = (1.-ww)*model1[key][key2]+ww*model2[key][key2]
     else:
       if key in interp_in_log:
-        model_new[key] = 10.**( (1.-ww)*np.log10(model1[key]) + \
-                                ww*np.log10(model2[key]) )
+        # Geometric interpolation also preserves zero pressures and endpoints.
+        model_new[key] = np.power(model1[key], 1.-ww) * np.power(model2[key], ww)
       else:
         model_new[key] = (1.-ww)*model1[key] + ww*model2[key]
   return model_new
