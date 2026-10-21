@@ -752,16 +752,19 @@ def synth(linelist=None, run_id='', workdir='/tmp',
         flinelist = linelist
         # linelist is a file name or a list of file names
         linelist = np.atleast_1d(linelist)
+        wavelength_minima, wavelength_maxima = [], []
         for l1 in linelist:
             if not os.path.exists(l1):
                 raise ValueError(f'linelist file {l1} does not exist')
             # If wmin or wmax is not specified, we have to get them from the linelist
             if wmin is None or wmax is None:
-                linelist = read_linelist(l1)
-                if wmin is None:
-                    wmin = linelist['wavelength'].min() - dwvl_margin
-                if wmax is None:
-                    wmax = linelist['wavelength'].max() + dwvl_margin
+                lines = read_linelist(l1)
+                wavelength_minima.append(lines['wavelength'].min())
+                wavelength_maxima.append(lines['wavelength'].max())
+        if wmin is None:
+            wmin = min(wavelength_minima) - dwvl_margin
+        if wmax is None:
+            wmax = max(wavelength_maxima) + dwvl_margin
     else:
         flinelist = os.path.join(workdir,f"linelist_{run_id}.lin")
         wmin_ll, wmax_ll = write_linelist(linelist, flinelist, 
