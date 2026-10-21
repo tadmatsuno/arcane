@@ -1,5 +1,19 @@
 # Repository bug audit
 
+## Fixed: masked samples change synthetic-line bin widths during fitting
+
+- Curve fitting evaluated synthetic spectra only at the retained wavelengths.
+  Rebinning interprets those wavelengths as pixel centers, so sample gaps and
+  sigma clipping enlarged adjacent bins. Optimization then fit a different
+  model from the one evaluated on the full spectrum. Tiny noise could trigger
+  clipping and turn an initially accurate fit into a severely incorrect result.
+- Evaluate model spectra on the complete binned observation grid and then apply
+  the fitting mask, with or without a continuum model.
+- Validation: `test/test_fitting_sampling.py` reproduces failures with three
+  fixed noise seeds and deterministic sample gaps, and verifies recovered line
+  height, velocity, and width. The original unseeded integration test exposed
+  this failure during the first full-suite run of this review.
+
 ## Fixed: continuum fitting crashes when observations are binned
 
 - Deterministic-update and residual-based fits evaluated the line model on
@@ -162,7 +176,7 @@ PYTHONPATH=test MPLCONFIGDIR=/tmp/arcane-mpl .venv/bin/python -m unittest \
 
 Result: all 35 tests in the command above pass. `git diff --check` also passes.
 
-## Final integration validation
+## Initial integration validation
 
 With the user's executables and both atmosphere grids configured, the full
 discovered suite passes: **72 tests**, including synthesis, abundance response,
@@ -178,6 +192,6 @@ four program/grid combinations in the 5853–5854 Å window. Each returns 101
 ordered wavelengths and finite flux with an absorption line. The results are in
 `/tmp/arcane-giant-synthesis.log`.
 
-The suite still emits existing numerical warnings from logarithms of zero
-pressure during interpolation and division by zero in a continuum-fitting
-trial. The checked atmospheric profiles and final synthetic spectra are finite.
+The later atmosphere-interpolation fix removes warnings from logarithms of
+zero pressure. A continuum-fitting trial still emits an existing division-by-
+zero warning; the checked atmospheric profiles and final spectra are finite.

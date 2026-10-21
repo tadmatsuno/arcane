@@ -215,20 +215,20 @@ class ModelBase:
                 p0 = self.x0_default
                 bounds = self.bounds_default
                 x_scale = self.scales if self.scales is not None else np.ones(len(p0))
-                if continuum_model is not None:
-                    if debug:
-                        print("Fitting with continuum model using curve_fit")
-                    def func_model(wvl, *xi):
+                if debug:
+                    print("Fitting using curve_fit")
+                def func_model(wvl_fit, *xi):
+                    if continuum_model is not None:
                         youter = self.func_model(wavelength,*xi)
                         if debug:
                             print(f"Current parameters: {xi}")
                         result_cont = continuum_model.fit(wavelength, flux / youter ,debug=debug)
-                        ycontinuum = continuum_model(wvl)
-                        return self.func_model(wvl, *xi) * ycontinuum
-                else:
-                    if debug:
-                        print("Fitting without continuum model using curve_fit")                     
-                    func_model = self.func_model
+                    # Rebin on the complete wavelength grid before masking.
+                    # Removing pixels first changes the widths of nearby bins.
+                    modeled = self.func_model(wvl, *xi)
+                    if continuum_model is not None:
+                        modeled = modeled * continuum_model(wvl)
+                    return modeled[use_flag]
                 opt_out = curve_fit(
                     func_model,
                     wvl[use_flag],
@@ -243,7 +243,7 @@ class ModelBase:
                 youter = self.func_model(wavelength, *opt_out[0])
                 if continuum_model is not None:
                     result_continuum = continuum_model.fit(wavelength, flux / youter, debug=debug)
-                _ = self.func_model(wvl[use_flag], *opt_out[0])
+                _ = self.func_model(wvl, *opt_out[0])
             elif hasattr(self, "func_residual"):
                 p0 = self.x0_default
                 bounds = self.bounds_default
