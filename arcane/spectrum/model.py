@@ -136,6 +136,8 @@ class ModelBase:
 
         NOTE: this function adds error on self.flux. If you do not want to double-
         count errors, make sure self.flux is a noise-free data (such as the best-fit model). 
+        These are the raw, unbinned data retained by fit. Refits use independent
+        model copies and preserve the original model, continuum, and data.
 
         Parameters
         ----------
@@ -148,12 +150,18 @@ class ModelBase:
             The result will be a tuple, -3, -2, -1, 1, 2, 3
         '''
         parallel = False # For now, parallel is not supported
+
+        if not hasattr(self, 'wavelength') or not hasattr(self, 'flux'):
+            raise ValueError('Call fit or set wavelength and flux before estimating uncertainty')
+        if iid and nmc <= 0:
+            raise ValueError('nmc must be positive for independent pixel noise')
         
         model0 = copy.deepcopy(self)
         mc_out = []
-        flux0 = self.flux.copy()
+        flux0 = np.asarray(model0.flux).copy()
+        wavelength0 = np.asarray(model0.wavelength).copy()
         if iid:
-            fluxes = [flux0+std*np.random.randn(len(self.flux)) for _ in range(nmc)]
+            fluxes = [flux0+std*np.random.randn(len(flux0)) for _ in range(nmc)]
         else:
             if nmc > 0:
                 fluxes = [flux0+std*np.random.randn() for _ in range(nmc)]
@@ -164,23 +172,11 @@ class ModelBase:
                 mc_out = list(tqdm.tqdm(pool.map(partial(_fit4parallel,self,fparameter,self.wavelength),fluxes)))
         else:
             for flux in tqdm.tqdm(fluxes):
-                self.fit(self.wavelength,flux)
-                mc_out.append(fparameter(self))
-        #if iid:
-        #    for ii in tqdm.tqdm(range(nmc)):
-        #        self.fit(self.wavelength,flux0+std*np.random.randn(len(self.flux)))
-        #        mc_out.append(fparameter(self))
-        #else:
-        #    if nmc > 0:
-        #        for ii in tqdm.tqdm(range(nmc)):
-        #            self.fit(self.wavelength,flux0+std*np.random.randn())
-        #            mc_out.append(fparameter(self))
-        #    else:
-        #        for nsigma in [-3,-2,-1,1,2,3]:
-        #            self.fit(self.wavelength,flux0+std*nsigma)
-        #            mc_out.append(fparameter(self))
+                sampled_model = copy.deepcopy(model0)
+                fit_parameters = getattr(sampled_model, '_uncertainty_fit_parameters', {})
+                sampled_model.fit(wavelength0,flux, **fit_parameters)
+                mc_out.append(fparameter(sampled_model))
         mc_result = {key: [d[key] for d in mc_out] for key in mc_out[0]}
-        self = copy.deepcopy(model0)
         return mc_result
 
     def fit(self, wavelength, flux, continuum_model = None, optimization_parameter = {}, debug=False):
@@ -305,6 +301,14 @@ class ModelBase:
         
         yfit = yfit
         residual_std = np.nanstd(flx[use_flag]-yfit[use_flag])
+
+        # Retain raw observations so uncertainty refits do not bin them twice.
+        self.wavelength = np.array(wavelength, copy=True)
+        self.flux = np.array(flux, copy=True)
+        self._uncertainty_fit_parameters = {
+            'continuum_model': copy.deepcopy(continuum_model),
+            'optimization_parameter': copy.deepcopy(optimization_parameter),
+        }
         
         return FittingResults(
             wavelength_raw = wavelength,
