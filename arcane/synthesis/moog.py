@@ -7,7 +7,7 @@ import warnings
 import numpy as np
 from arcane.utils.solarabundance import get_atomnum
 from arcane.utils import utils
-from arcane.mdlatm import marcs,avg3d
+from importlib import import_module
 import tempfile
 from arcane.synthesis.readvald import convert_sigma_alpha_to_gamma,Linelist
 import json
@@ -49,7 +49,11 @@ src_path = os.path.expanduser("~/.arcanesrc")
 def find_moogsilent():
     global moog_path
     # This function reads the location of MOOGSILENT from .arcanesrc
-    arcane_config = json.load(open(src_path,"r"))
+    try:
+        with open(src_path, "r") as config_file:
+            arcane_config = json.load(config_file)
+    except FileNotFoundError:
+        arcane_config = {}
     if not "moog_silent" in arcane_config.keys():
         print("MOOGSILENT is not set in the .arcanesrc file")
         print("Call set_moogsilent_path to set the path")
@@ -246,6 +250,7 @@ def write_marcs2moog_model(fname,model,vt,feh_overwrite = None):
     None. 
     '''
     if type(model) is str:
+        from arcane.mdlatm import marcs
         model = marcs.read_marcs(model)
     with open(fname,'w') as f:
         f.write('BEGN\n')
@@ -567,9 +572,6 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
     fstrong_lines = os.path.join(workdir,"strong_lines.in")
     flog  = os.path.join(workdir,"moog.log")
 
-    mdlatm = globals()[mdlatm_io]
-
-
     if (mode in ['cog','cogsyn','blends']) and (species_vary ==0):
         raise ValueError(f'For {key} driver, species_vary needs to be specified')
 
@@ -610,6 +612,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
         feh = moog_model['m_h']
 #        feh = 
     elif not marcs_mod_file is None:
+        mdlatm = import_module(f'arcane.mdlatm.{mdlatm_io}')
         if not all((teff is None, logg is None,feh_mod is None, alphafe_mod is None )):
             warnings.warn(
                 'model file is directly provided. '+\
@@ -621,6 +624,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
         if feh is None:
            feh = model['m_h']
     else:
+        mdlatm = import_module(f'arcane.mdlatm.{mdlatm_io}')
         if feh_mod is None:
             feh_mod = feh
         if alphafe_mod is None:
