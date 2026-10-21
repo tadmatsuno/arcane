@@ -1,5 +1,15 @@
 # Repository bug audit
 
+## Fixed: isotope inputs are rejected or silently ignored
+
+- Both programs compared dictionary keys to the `str` class by identity,
+  rejecting valid string keys. Validate with `isinstance` instead.
+- Turbospectrum added `I_...` inputs only when overwriting an existing dictionary
+  entry. Always add the requested isotope; retain the documented keyword-over-
+  dictionary precedence and its warning.
+- Validation: `test/test_isotope_inputs.py` reproduces both failures and checks
+  the generated control files and finite spectra from the real executables.
+
 ## Fixed: Turbospectrum ignores the requested wavelength step
 
 - `synth(dwvl_step=...)` omitted the argument when invoking opacity generation

@@ -646,7 +646,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
             abundances[atomnum] = kw_args["AX_dict"][atomnum] - (solar_moog[atomnum-1] + feh)
     if "Isotope_dict" in kw_args.keys():
         for isospecies in kw_args["Isotope_dict"].keys():
-            assert isospecies is str, 'Isotope_dict keys should be str'
+            assert isinstance(isospecies, str), 'Isotope_dict keys should be str'
             value = kw_args["Isotope_dict"][isospecies]
             if value == 0.0:
                 warnings.warn(f'Isotope {isospecies} is set to 0.0. This will cause an error in MOOG.\n'+\

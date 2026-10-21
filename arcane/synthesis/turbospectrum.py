@@ -546,7 +546,7 @@ def run_turbospectrum(mode,
             abundances[atomnum] = kw_args["AX_dict"][atomnum]
     if "Isotope_dict" in kw_args.keys():
         for isospecies in kw_args["Isotope_dict"].keys():
-            assert isospecies is str, 'Isotope_dict keys should be str'
+            assert isinstance(isospecies, str), 'Isotope_dict keys should be str'
             isotopes[isospecies] = kw_args["Isotope_dict"][isospecies]
     ts_input = {value[0]: value[1] for value in ts_default_input.values()}
     if mode == 'babsma' and mdlatm_io == 'avg3d':
@@ -579,7 +579,7 @@ def run_turbospectrum(mode,
             if isospecies in isotopes.keys():
                 warnings.warn(f"Isotope for species {isospecies} is already set to {isotopes[isospecies]}\n"+\
                     "I_X entries are prioritized over Isotope_dict inputs")
-                isotopes[isospecies] = val
+            isotopes[isospecies] = val
             continue
         if key not in list(ts_default_input.keys()) + list(ts_nocheck_input.keys()) + ["AX_dict","Isotope_dict"]:
             warnings.warn(f"Input {key} is not recognized by Turbospectrum. It will be ignored.")
