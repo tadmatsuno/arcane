@@ -120,3 +120,23 @@ PYTHONPATH=test MPLCONFIGDIR=/tmp/arcane-mpl .venv/bin/python -m unittest \
 ```
 
 Result: all 35 tests in the command above pass. `git diff --check` also passes.
+
+## Final integration validation
+
+With the user's executables and both atmosphere grids configured, the full
+discovered suite passes: **72 tests**, including synthesis, abundance response,
+fitting, parallel spectral grids, atmosphere interpolation, and serialization.
+
+```sh
+MPLCONFIGDIR=/tmp/arcane-mpl .venv/bin/python -m unittest discover -s test -p 'test*.py' -v
+```
+
+The captured result is `/tmp/arcane-integration-final.log`. Additional real
+synthesis checks at Teff=5000 K, logg=2.5, [Fe/H]=-2, vt=1.5 km/s pass for all
+four program/grid combinations in the 5853–5854 Å window. Each returns 101
+ordered wavelengths and finite flux with an absorption line. The results are in
+`/tmp/arcane-giant-synthesis.log`.
+
+The suite still emits existing numerical warnings from logarithms of zero
+pressure during interpolation and division by zero in a continuum-fitting
+trial. The checked atmospheric profiles and final synthetic spectra are finite.
