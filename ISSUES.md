@@ -1,5 +1,17 @@
 # Repository bug audit
 
+## Approved performance improvement: reuse smoothing geometry
+
+- Removed unused Python min/max scans and calculations for the inactive
+  smoothing mode. `SmoothingPlan` retains grid spacing and uniformity checks
+  while accepting a different flux array and FWHM on every call.
+- `LineSynth` reuses a local plan and refreshes it when source wavelengths
+  change, including in-place mutation. The Gaussian filter, constant padding,
+  and 10-sigma truncation remain unchanged.
+- Validation: prepared and standalone smoothing match the original filter
+  exactly in both modes, including zero width; warning and changing-grid tests
+  pass along with the existing analytic and fitting regressions.
+
 ## Fixed: uncertainty estimation lacks fitting data and alters the original fit
 
 - `fit` did not retain the observations required by `uncertainty`, which raised
