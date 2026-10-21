@@ -195,3 +195,16 @@ ordered wavelengths and finite flux with an absorption line. The results are in
 The later atmosphere-interpolation fix removes warnings from logarithms of
 zero pressure. A continuum-fitting trial still emits an existing division-by-
 zero warning; the checked atmospheric profiles and final spectra are finite.
+
+## Further review validation
+
+After fixes for requested wavelength spacing, isotope controls, atmosphere
+interpolation, binned-continuum fitting, and masked-spectrum fitting, the full
+discovered suite passes **82 tests** with the same command above. Output is
+captured in `/tmp/arcane-review-verified.log`. `git diff --check` also passes.
+
+The masked-spectrum fix was prompted by an intermittent failure in the first
+full run. Its regression tests use three fixed noise seeds that reproduced
+the failure and explicit sample gaps, avoiding reliance on a favorable random
+test run. All five issues were fixed on separate branches and merged into
+`codex-main`; the original `main` branch remains unchanged.
