@@ -778,7 +778,7 @@ def synth(linelist=None, run_id='', workdir='/tmp',
             teff=teff, logg=logg, feh=feh, alphafe=alphafe,
             feh_mod=feh_mod, alphafe_mod=alphafe_mod,
             mdlatm_io=mdlatm_io, vt=vt,
-            wmin=wmin, wmax=wmax, 
+            wmin=wmin, wmax=wmax, dwvl_step=dwvl_step,
             **kw_args)
         ts_opac_file = result_babsma["opac_file"]
         marcs_mod_file = result_babsma["model"]
@@ -801,7 +801,7 @@ def synth(linelist=None, run_id='', workdir='/tmp',
         ts_opac_file=ts_opac_file,
         feh =  feh, alphafe=alphafe,
         spherical=spherical,
-        wmin = wmin, wmax = wmax,
+        wmin = wmin, wmax = wmax, dwvl_step=dwvl_step,
         **kw_args)
     wvl, flx, cntm = np.loadtxt(result_syn["result_file"]).T
     if in_parallel:

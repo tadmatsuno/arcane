@@ -1,5 +1,13 @@
 # Repository bug audit
 
+## Fixed: Turbospectrum ignores the requested wavelength step
+
+- `synth(dwvl_step=...)` omitted the argument when invoking opacity generation
+  and synthesis, so all spectra used the default 0.01 Å spacing.
+- Forward the requested step to both stages, including cached-opacity runs.
+- Validation: `test/test_ts_sampling.py` reproduces the incorrect sample count
+  and verifies real synthesis at 0.02 and 0.04 Å steps with new/cached opacity.
+
 ## Fixed: line-profile parameter bookkeeping
 
 - Shared FWHM fitting built duplicate parameter entries and truncated line indices.
