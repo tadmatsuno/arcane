@@ -24,6 +24,17 @@
   nonexistent configuration and verifies species conversion without loading
   either atmosphere module.
 
+## Fixed: MOOG summary parsing loses rows or hangs
+
+- EW and abundance parsers stopped reading after each table's first row. The
+  abundance parser could also stop at the first species' average. Keep reading
+  through data rows and resume at subsequent species headers.
+- Synthesis parsing looped forever at EOF if no `MODEL` header was written.
+  Raise `ValueError` with the file path instead.
+- Validation: `test/test_moog_summary.py` covers multiple EW rows, multiple
+  abundance rows and species, valid synthesis output, and missing headers.
+  Both multi-row tests reproduced lost rows before the fix.
+
 ## Scope
 
 This audit follows `Agents.md` and preserves the public APIs. The feature ideas

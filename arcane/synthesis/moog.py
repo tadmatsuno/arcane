@@ -754,9 +754,11 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
 
 def read_moog_sum_synth(fsummary):
     with open(fsummary,'r') as f:
-        line = ''
-        while not line.startswith('MODEL'):
-            line = f.readline()
+        for line in f:
+            if line.startswith('MODEL'):
+                break
+        else:
+            raise ValueError(f'MOOG synthesis summary has no MODEL header: {fsummary}')
         line = f.readline()
         ws,wf,dwvl,wm = [float(l) for l in line.strip().split()]
         wvl = np.arange(ws,wf+dwvl,dwvl)
@@ -779,7 +781,12 @@ def read_moog_sum_ewfind(fsummary):
             if line.startswith("wavelength"):
                 reading = True
                 continue
+            if not line.strip():
+                continue
             if reading:
+                if line.startswith("average"):
+                    reading = False
+                    continue
                 wvl = float(line[0:10])
                 expot = float(line[10:20])
                 loggf = float(line[20:30])
@@ -796,7 +803,6 @@ def read_moog_sum_ewfind(fsummary):
                         'ew': ew
                     }
                 )
-                reading = False
     return pandas.DataFrame.from_dict(results)
 
 def read_moog_sum_abfind(fsummary):
@@ -808,9 +814,12 @@ def read_moog_sum_abfind(fsummary):
             if line.startswith("wavelength"):
                 reading = True
                 continue
+            if not line.strip():
+                continue
             if reading:
                 if line.startswith("average"):
-                    break
+                    reading = False
+                    continue
                 wvl = float(line[0:10])
                 moog_species_id = line[10:20].strip()
                 expot = float(line[20:30])
@@ -832,7 +841,6 @@ def read_moog_sum_abfind(fsummary):
                         'abund': abund,
                     }
                 )
-                reading = False
     return pandas.DataFrame.from_dict(results)
 
 
