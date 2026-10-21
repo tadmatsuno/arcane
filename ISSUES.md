@@ -53,6 +53,15 @@ This audit follows `Agents.md` and preserves the public APIs. The feature ideas
 in `TODO` (batch configuration, detection limits, correction grids, and additional
 synthesis engines) remain future work; they are not implemented by these fixes.
 
+## Fixed: AVG3D radiation pressure is lost when reading saved atmospheres
+
+- The final column name retained its trailing newline, so radiation pressure
+  was stored under `Prad\n` rather than `Prad`. Strip column whitespace.
+- Validation: `test/test_atmosphere_grids.py` checks interpolation, finite and
+  physically positive structure fields, full profile round-trips for a solar
+  atmosphere and two metal-poor atmospheres, and out-of-range rejection for
+  both grids. All three AVG3D round-trips reproduced the missing field.
+
 ## Fixed: fitting tests override the configured MOOG executable
 
 - Importing `test_fitting.py` attempted to replace the configured executable with

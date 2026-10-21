@@ -244,7 +244,7 @@ def read_avg3d(filename):
         else:
             warnings.warn("Unknown line, skipping: "+line)
     line = lines[ii]
-    columns = [line.replace(" ","") for line in line.split(",")]
+    columns = [column.strip() for column in line.split(",")]
     for col in columns:
         model[col] = np.zeros(model['ndepth'],dtype=float)
     ii += 1
