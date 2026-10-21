@@ -246,3 +246,18 @@ full run. Its regression tests use three fixed noise seeds that reproduced
 the failure and explicit sample gaps, avoiding reliance on a favorable random
 test run. All five issues were fixed on separate branches and merged into
 `codex-main`; the original `main` branch remains unchanged.
+
+## Multi-file, smoothing, and uncertainty validation
+
+The three subsequently approved fixes were implemented on separate issue
+branches and merged into `codex-main`. The full discovered suite now passes
+**93 tests**, including real Turbospectrum synthesis with multiple line lists,
+analytic Gaussian smoothing checks, and uncertainty-refitting regressions.
+The command remains:
+
+```sh
+MPLCONFIGDIR=/tmp/arcane-mpl .venv/bin/python -m unittest discover -s test -p 'test*.py' -v
+```
+
+Captured output: `/tmp/arcane-three-fixes-suite.log`. `git diff --check` passes.
+No performance improvements were implemented as part of these bug fixes.
