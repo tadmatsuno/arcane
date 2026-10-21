@@ -76,6 +76,23 @@ def average_nbins(nbin,x,y):
       np.sum([dx[0+ii:nfin:nbin] for ii in range(nbin)],axis=0)
     return xx,yy
 
+def _rebin_slices(delx, nchunk_max, npix_mask_criterion):
+  if nchunk_max < 2:
+    raise ValueError('nchunk_max must be at least 2')
+  if npix_mask_criterion == np.inf:
+    boundaries = [len(delx)-1]
+  else:
+    boundaries = np.r_[np.flatnonzero(delx > npix_mask_criterion*np.median(delx)), len(delx)-1]
+  start = 0
+  for end in boundaries:
+    stop = start
+    while stop <= end:
+      stop = min(start+nchunk_max, end+1)
+      yield start, stop
+      start = stop-1
+    start = stop
+
+
 def rebin(x, y, xnew, conserve_count=True, nchunk_max = 1000000, npix_mask_criterion = np.inf ): 
   '''
   This function conducts re-binning of a spectrum.
@@ -127,38 +144,96 @@ def rebin(x, y, xnew, conserve_count=True, nchunk_max = 1000000, npix_mask_crite
   xnew_edges, dxnew = get_edges_dx(xnew)
   yout = np.zeros(len(xnew))
 
-  if npix_mask_criterion == np.inf:
-    delx_large = [len(delx)-1]
-  else:
-    delx_large = np.concatenate([np.nonzero(delx > npix_mask_criterion*np.median(delx))[0], [len(delx)-1]])
-  
-  i0 = 0
-  for i in range(len(delx_large)):
-    i1 = i0
-    while i1 <= delx_large[i]:
-      i1 = i0 + nchunk_max
-      i1 = np.minimum(i1, delx_large[i]+1)
-      x_in = x[i0:i1]
-      y_in = y[i0:i1]
-      j0 = np.searchsorted(xnew, x_in[0], side='left')
-      j1 = np.searchsorted(xnew, x_in[-1], side='right')
-      if j0 < j1:
-        x_edges, dx = get_edges_dx(x_in)
-        if conserve_count: # total count conserved (input is per pix)
-          fxdx = y_in
-        else:
-          fxdx = y_in * dx
-        cdf = np.concatenate([[0.0], np.cumsum(fxdx)])
-        cdf_new = np.interp(xnew_edges[j0:j1+1], x_edges, cdf,
+  for i0, i1 in _rebin_slices(delx, nchunk_max, npix_mask_criterion):
+    x_in = x[i0:i1]
+    y_in = y[i0:i1]
+    j0 = np.searchsorted(xnew, x_in[0], side='left')
+    j1 = np.searchsorted(xnew, x_in[-1], side='right')
+    if j0 < j1:
+      x_edges, dx = get_edges_dx(x_in)
+      if conserve_count: # total count conserved (input is per pix)
+        fxdx = y_in
+      else:
+        fxdx = y_in * dx
+      cdf = np.concatenate([[0.0], np.cumsum(fxdx)])
+      cdf_new = np.interp(xnew_edges[j0:j1+1], x_edges, cdf,
             left=0.0, right=cdf[-1])
-        yout[j0:j1] = np.diff(cdf_new)
-      i0 = i1 -1
-    i0 = i1
+      yout[j0:j1] = np.diff(cdf_new)
     
   if conserve_count:
     return yout
   else:
     return yout / dxnew
+
+
+class RebinPlan:
+  """Reuse pixel geometry for fixed source and output wavelength grids.
+
+  Grids are copied at construction. Flux may change on every call. A positive
+  wavelength_scale applies a Doppler scaling to the source grid; mappings are
+  rebuilt whenever that scale changes. Nonfinite flux uses the general rebin
+  path because excluding samples changes their pixel edges.
+  """
+  def __init__(self, x, xnew, conserve_count=True, nchunk_max=1000000,
+               npix_mask_criterion=np.inf):
+    self._x = np.array(x, copy=True)
+    self._target = np.array(xnew, copy=True)
+    assert np.all(np.diff(self._x)>0), 'x has to be in ascending order'
+    assert np.all(np.diff(self._target)>0), 'xnew has to be in ascending order'
+    self._target_edges, self._target_dx = get_edges_dx(self._target)
+    self.conserve_count = conserve_count
+    self.nchunk_max = nchunk_max
+    self.npix_mask_criterion = npix_mask_criterion
+    self._prepare(1.0)
+
+  def matches_target(self, wavelength):
+    return np.array_equal(self._target, wavelength)
+
+  def _prepare(self, scale):
+    x = self._x if scale == 1.0 else self._x*scale
+    delx = np.diff(x)
+    assert np.all(delx>0), 'x has to be in ascending order'
+    chunks = []
+    for i0, i1 in _rebin_slices(delx, self.nchunk_max, self.npix_mask_criterion):
+      j0 = np.searchsorted(self._target, x[i0], side='left')
+      j1 = np.searchsorted(self._target, x[i1-1], side='right')
+      if j0 == j1:
+        continue
+      edges, dx = get_edges_dx(x[i0:i1])
+      # np.interp uses double-precision coordinates, including for float32 input.
+      edges = np.asarray(edges, dtype=float)
+      target_edges = np.asarray(self._target_edges[j0:j1+1], dtype=float)
+      indices = np.searchsorted(edges, target_edges, side='right')-1
+      indices = np.clip(indices, 0, len(edges)-2)
+      offsets = target_edges-edges[indices]
+      intervals = edges[indices+1]-edges[indices]
+      left = np.searchsorted(target_edges, edges[0], side='left')
+      right = np.searchsorted(target_edges, edges[-1], side='left')
+      chunks.append((i0, i1, j0, j1, dx, indices, offsets, intervals, left, right))
+    self._chunks = chunks
+    self._scale = scale
+
+  def __call__(self, flux, wavelength_scale=1.0):
+    flux = np.asarray(flux)
+    if flux.ndim != 1 or len(flux) != len(self._x):
+      raise ValueError('flux must have one value per source wavelength')
+    if not np.isfinite(wavelength_scale) or wavelength_scale <= 0:
+      raise ValueError('wavelength_scale must be finite and positive')
+    if not np.all(np.isfinite(flux)):
+      return rebin(self._x*wavelength_scale, flux, self._target,
+                   conserve_count=self.conserve_count, nchunk_max=self.nchunk_max,
+                   npix_mask_criterion=self.npix_mask_criterion)
+    if wavelength_scale != self._scale:
+      self._prepare(wavelength_scale)
+    result = np.zeros(len(self._target))
+    for i0, i1, j0, j1, dx, indices, offsets, intervals, left, right in self._chunks:
+      values = flux[i0:i1] if self.conserve_count else flux[i0:i1]*dx
+      cdf = np.r_[0., np.cumsum(values)]
+      interpolated = ((cdf[indices+1]-cdf[indices])/intervals)*offsets+cdf[indices]
+      interpolated[:left] = 0.
+      interpolated[right:] = cdf[-1]
+      result[j0:j1] = np.diff(interpolated)
+    return result if self.conserve_count else result/self._target_dx
   
 def x_sorted(xx,yy):
   '''

@@ -1,5 +1,19 @@
 # Repository bug audit
 
+## Approved performance improvement: prepared rebinning geometry
+
+- `RebinPlan` retains pixel edges, widths, chunk ranges, and interpolation
+  brackets for repeated flux arrays on fixed grids. A Doppler-scale change
+  rebuilds the mapping using the actual shifted wavelengths; nonfinite flux
+  falls back to general rebinning because removing samples changes their edges.
+- `LineSynth` reuses local plans for at most two target grids, supporting raw
+  and binned continuum fits without an unbounded cache. Source-grid changes,
+  including in-place mutation, discard the plans. Target grids are copied and
+  compared before reuse so changes do not silently reuse stale geometry.
+- Validation: independent pixel-overlap integrals, float32/float64 flux,
+  repeated changing flux, count/flux modes, gaps, NaNs, chunking, changing
+  velocities, source/target mutation, and existing fitting regressions.
+
 ## Approved performance improvement: reduce rebinning scans
 
 - Compute the finite-flux mask once and avoid copying already finite inputs.
@@ -285,3 +299,33 @@ MPLCONFIGDIR=/tmp/arcane-mpl .venv/bin/python -m unittest discover -s test -p 't
 
 Captured output: `/tmp/arcane-three-fixes-suite.log`. `git diff --check` passes.
 No performance improvements were implemented as part of these bug fixes.
+
+## Approved performance validation
+
+The separately approved optimizations preserve the 10-sigma kernel and existing
+public function signatures. The full discovered suite passes **103 tests**;
+output is in `/tmp/arcane-performance-suite.log`. `git diff --check` passes.
+
+The reproducible benchmark in `scripts/benchmark_spectrum.py` compares against
+pre-optimization commit `390d515`. All **64 differential comparisons** agree
+exactly (maximum absolute difference 0), including changes to flux, Doppler
+scale, count/flux modes, gaps, NaNs, and chunking.
+
+Representative repeated `LineSynth` evaluations on synthetic test spectra:
+
+| Pixels | FWHM (km/s) | Previous (ms) | Optimized (ms) | Speedup |
+| ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 5 | 0.232 | 0.074 | 3.1x |
+| 100,000 | 5 | 11.988 | 2.088 | 5.7x |
+| 100,000 | 50 | 30.625 | 21.285 | 1.4x |
+
+For the 100,000-pixel, 5 km/s case, repeated prepared rebinning takes
+0.498 ms versus 3.089 ms previously (6.2x); prepared smoothing takes 1.467 ms
+versus 8.516 ms (5.8x). With changing velocity, combined evaluation takes
+3.174 ms versus 11.971 ms (3.8x). Broad kernels still spend most time convolving.
+
+These are local microbenchmarks, exclude initial plan construction, and use a
+cheap analytic spectrum generator. They do not claim equivalent speedups for
+external MOOG/Turbospectrum execution. Full timings and environment versions are
+in `/tmp/arcane-spectrum-performance-results.json`; README documents usage and
+the benchmark command.
