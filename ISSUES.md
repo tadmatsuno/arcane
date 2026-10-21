@@ -1,5 +1,17 @@
 # Repository bug audit
 
+## Fixed: atmosphere interpolation mutates inputs and mishandles depth overlap
+
+- Resampling changed the second input atmosphere in place and left the first
+  untrimmed, causing shape errors for partially overlapping depth ranges.
+- Resample both into new models on the common optical-depth grid. Reject
+  insufficient overlap explicitly and leave both source atmospheres intact.
+- Express logarithmic interpolation as the equivalent geometric product,
+  preserving zero pressures and exact endpoints without `log(0)` or `0 * inf`.
+- Validation: `test/test_atmosphere_interpolation.py` reproduces the shape error,
+  source mutation, and zero-pressure endpoint errors. Real-grid interpolation
+  and program integration are checked by the existing atmosphere/synthesis tests.
+
 ## Fixed: isotope inputs are rejected or silently ignored
 
 - Both programs compared dictionary keys to the `str` class by identity,
