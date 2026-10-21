@@ -628,10 +628,9 @@ def run_turbospectrum(mode,
         f.write(ts_input_str)
 
     with open(flog, "wb") as logf:
-        cwd = os.getcwd()
-        os.chdir(workdir)
-        if not os.path.exists("DATA"):
-            os.symlink(DATA_path, "DATA")
+        data_link = os.path.join(workdir, 'DATA')
+        if not os.path.lexists(data_link):
+            os.symlink(DATA_path, data_link)
         if mode == 'babsma':
             command = [babsma_path]
         elif mode == 'syn':
@@ -639,11 +638,9 @@ def run_turbospectrum(mode,
         else:
             raise ValueError('mode should be babsma or syn')
         try:
-            p = subprocess.run(command, input=ts_input_str.encode(), stdout=logf, stderr=subprocess.STDOUT, check=True)
+            p = subprocess.run(command, cwd=workdir, input=ts_input_str.encode(), stdout=logf, stderr=subprocess.STDOUT, check=True)
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Turbospectrum failed with return code {e.returncode}. Check the log file {flog} for details.")
-        finally:
-            os.chdir(cwd)
    
     result_dict = {}
     if mode == 'babsma':
@@ -740,6 +737,7 @@ def synth(linelist=None, run_id='', workdir='/tmp',
         Additional keyword arguments to be passed to the run_turbospectrum function.
     """
     
+    os.makedirs(workdir, exist_ok=True)
     if addtime_stamp:        
         t0 = time.time()
         tint = np.base_repr(int(t0),36)

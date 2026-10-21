@@ -53,6 +53,20 @@ This audit follows `Agents.md` and preserves the public APIs. The feature ideas
 in `TODO` (batch configuration, detection limits, correction grids, and additional
 synthesis engines) remain future work; they are not implemented by these fixes.
 
+## Fixed: synthesis working directories and MOOG log isolation
+
+- Both synthesis wrappers failed when a requested working directory did not
+  already exist, including temporary-directory runs. Create it before writing
+  input files or creating a temporary child directory.
+- MOOG wrote every run's log in the caller's directory, causing parallel grid
+  workers to overwrite one another's logs. Write it inside each run's working
+  directory, including archived logs.
+- Both programs now receive their working directory through `subprocess.run`;
+  the Python process no longer temporarily changes its global working directory.
+- Validation: `test/test_synthesis_workdirs.py` runs both real programs with
+  new nested directories, in serial and temporary-directory modes, and verifies
+  output, log placement, current directory, and temporary-directory cleanup.
+
 ## Fixed: Turbospectrum cannot use the AVG3D grid
 
 - An integration probe reproduced `KeyError: 'avg3d'` despite accepting the

@@ -565,6 +565,7 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
     
     '''
 #    print(os.getcwd(),workdir)
+    os.makedirs(workdir, exist_ok=True)
     flinelist = os.path.join(workdir,"lines.in")#os.path.join(f'line_{run_id}.in')
     fmodelin  = os.path.join(workdir,"model.in")#os.path.join(f'model_{run_id}.in')
     fstdout   = os.path.join(workdir,"moog.std")#os.path.join(f'moog_{run_id}.std')
@@ -724,15 +725,11 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
         
 
     ## Run MOOG
-    with open("moog.log", "wb") as logf:
-        cwd = os.getcwd()
-        os.chdir(workdir)
+    with open(flog, "wb") as logf:
         try:
-            subprocess.run([moog_path], stdout=logf, stderr=subprocess.STDOUT, check=True)
+            subprocess.run([moog_path], cwd=workdir, stdout=logf, stderr=subprocess.STDOUT, check=True)
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"MOOGSILENT failed with exit code {e.returncode}. See moog.log") from e
-        finally:
-            os.chdir(cwd)
+            raise RuntimeError(f"MOOGSILENT failed with exit code {e.returncode}. See {flog}") from e
 
     if run_id != '':            
             shutil.copy(flinelist, os.path.join(workdir,f'linelist_{run_id}.in'))
@@ -883,6 +880,7 @@ def ewfind(linelist, run_id = '', workdir = '/tmp',
         t2 = int((t0 - int(t0))*1e2)
         run_id += f"{tint:s}{t2:02d}"
     if in_parallel:
+        os.makedirs(workdir, exist_ok=True)
         tempdir = tempfile.TemporaryDirectory(dir=workdir)
         workdir = tempdir.name
         run_id = ""
@@ -964,6 +962,7 @@ def abfind(linelist, run_id = '', workdir = '/tmp',
         t2 = int((t0 - int(t0))*1e2)
         run_id += f"{tint:s}{t2:02d}"
     if in_parallel:
+        os.makedirs(workdir, exist_ok=True)
         tempdir = tempfile.TemporaryDirectory(dir=workdir)
         workdir = tempdir.name
         run_id = ""
@@ -1047,6 +1046,7 @@ def synth(linelist, run_id = '', workdir = '/tmp',
         t2 = int((t0 - int(t0))*1e2)
         run_id += f"{tint:s}{t2:02d}"
     if in_parallel:
+        os.makedirs(workdir, exist_ok=True)
         tempdir = tempfile.TemporaryDirectory(dir=workdir)
         workdir = tempdir.name
         run_id = ""
