@@ -1,5 +1,16 @@
 # Repository bug audit
 
+## Fixed: wavelength-based smoothing ignores its requested FWHM
+
+- With `fwhm_vel=False`, smoothing used wavelength spacing itself as a Gaussian
+  width in pixels, ignoring `vfwhm`. Different requested widths gave identical
+  spectra, often with no broadening at all.
+- Convert the supplied wavelength FWHM to Gaussian sigma and divide by pixel
+  spacing. Velocity-based smoothing retains its existing behavior.
+- Validation: `test/test_spectrum_smoothing.py` checks two widths against the
+  analytic Gaussian convolution variance, equivalent-width conservation, zero
+  width, and agreement between equivalent wavelength and velocity widths.
+
 ## Fixed: multi-file synthesis uses only the first line list's wavelength limits
 
 - Turbospectrum filled missing limits inside the first iteration, skipping

@@ -559,6 +559,7 @@ def get_grid_value(grid_points,target, outside='nearest'):
   return p1,p2,True
 
 def smooth_spectrum(wvl,flx,vfwhm,fwhm_vel=True):
+  """Gaussian smoothing with FWHM in km/s, or wavelength units if fwhm_vel=False."""
   wvlmin,wvlmax = min(wvl),max(wvl)
   wc = (wvlmin+wvlmax)/2.0
   dwvl = wvl[1:]-wvl[:-1]
@@ -581,6 +582,6 @@ def smooth_spectrum(wvl,flx,vfwhm,fwhm_vel=True):
     flout = gaussian_filter(flx,psigma,mode='constant',cval=1.0,truncate=10.0)
     return flout
   else:
-    psigma = np.median(dwvl)
+    psigma = vfwhm / (np.sqrt(8.0*np.log(2)) * np.median(dwvl))
     flout = gaussian_filter(flx,psigma,mode='constant',cval=1.0,truncate=10.0)
     return flout
