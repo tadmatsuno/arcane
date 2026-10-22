@@ -3,8 +3,89 @@ from scipy.interpolate import Akima1DInterpolator, RBFInterpolator
 import warnings
 from multiprocessing import Pool
 from functools import partial
+from dataclasses import dataclass
+import pickle
+
+
+@dataclass
+class _AkimaState:
+    """Persist polynomial coefficients without SciPy's private object state."""
+
+    c: np.ndarray
+    x: np.ndarray
+    extrapolate: bool
+    axis: int
+
+    def restore(self):
+        return Akima1DInterpolator.construct_fast(
+            self.c, self.x, extrapolate=self.extrapolate, axis=self.axis)
+
+
+class _LegacyAkima:
+    """Capture older SciPy state before the current SciPy tries to interpret it."""
+
+    def __setstate__(self, state):
+        # Older versions stored slots as (instance_dict, slots_dict).
+        if isinstance(state, tuple):
+            state = {key: value for part in state if part is not None
+                     for key, value in part.items()}
+        self.state = state
+
+    def restore(self):
+        state = self.state
+        if '_delegate_to' in state:
+            polynomial = state['_delegate_to']
+            c, x = polynomial.c, polynomial.x
+        else:
+            c = state['_c'] if '_c' in state else state['c']
+            x = state['_x'] if '_x' in state else state['x']
+        if '_delegate_to' in state:
+            extrapolate, axis = polynomial.extrapolate, polynomial.axis
+        else:
+            extrapolate, axis = state['extrapolate'], state['axis']
+        return _AkimaState(c, x, extrapolate, axis).restore()
+
+
+class _GridUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == 'scipy.interpolate._cubic' and name == 'Akima1DInterpolator':
+            return _LegacyAkima
+        if module == 'scipy._lib.array_api_compat.numpy._aliases' and name == 'asarray':
+            # Historical Akima state stored this function; restoring the
+            # coefficients below replaces that state with the current layout.
+            return np.asarray
+        return super().find_class(module, name)
+
+
+def load_grid(source):
+    """Load a trusted SpectraGrid pickle from a path or binary stream.
+
+    Also recovers historical Akima interpolators across SciPy's private-state
+    changes, retaining their coefficients rather than recomputing the grid.
+    """
+    if hasattr(source, 'read'):
+        result = _GridUnpickler(source).load()
+    else:
+        with open(source, 'rb') as stream:
+            result = _GridUnpickler(stream).load()
+    if not isinstance(result, SpectraGrid):
+        raise TypeError('The pickle does not contain a SpectraGrid')
+    return result
 
 class SpectraGrid:
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        for name, value in state.items():
+            if isinstance(value, Akima1DInterpolator):
+                state[name] = _AkimaState(value.c, value.x, value.extrapolate, value.axis)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update({
+            name: value.restore() if isinstance(value, (_AkimaState, _LegacyAkima)) else value
+            for name, value in state.items()
+        })
+
     def __init__(self, labels, input_values, fluxes, wavelength, no_line_flux = None, ews = None, depth_wr_range = None):
         self.labels = labels
         self.input_values = input_values

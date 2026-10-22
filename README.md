@@ -55,10 +55,10 @@ SciPy, restart the Python process or notebook kernel before importing arcane.
 An existing process can retain modules from the previous library version while
 loading other modules from the newly installed version.
 
-If you see `No module named 'scipy._lib.array_api_compat'`, first restart the
-process and run the import check above with the affected environment's Python.
-This is a private SciPy module, not an additional arcane dependency. If a fresh
-process still fails, inspect its full traceback and verify the environment with
+If an error occurs at `pickle.load`, see the saved-grid instructions below;
+restarting Python or reinstalling SciPy will not repair an incompatible pickle.
+For ordinary import failures, run the import check above in a fresh process
+and verify the environment with
 `uv pip check --python /path/to/environment/bin/python`. If SciPy's own imports
 fail in that fresh process, repair its installation in that environment:
 
@@ -68,6 +68,30 @@ uv pip install --python /path/to/environment/bin/python --reinstall-package scip
 
 Keep the full traceback and interpreter path if the failure persists; an error
 with the same module name can have different causes.
+
+### Loading saved spectral grids
+
+Older grid pickles can reference `scipy._lib.array_api_compat`, which moved in
+newer SciPy releases. They may also store interpolation objects with an obsolete
+internal layout. Replace `pickle.load(fgrid)` with arcane's compatibility loader:
+
+```python
+from arcane.synthesis import grid
+
+with open(gridpath, "rb") as fgrid:
+    g1 = grid.load_grid(fgrid)
+# Equivalently: g1 = grid.load_grid(gridpath)
+```
+
+The loader recovers historical Akima interpolators from their saved polynomial
+coefficients; it does not regenerate spectra or refit interpolation coefficients.
+It leaves the original file unchanged. Only load pickle files you trust.
+
+New `pickle.dump(g1, file)` calls store Akima coefficients and knots through
+arcane's own state representation, avoiding the old private SciPy references.
+These new files require this updated version of arcane when loading. You can
+write a recovered grid to a **new** file using `pickle.dump` and subsequently
+load that file with ordinary `pickle.load`.
 
 ### Synthesis programs and atmosphere grids
 
