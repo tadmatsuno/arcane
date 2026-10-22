@@ -1,5 +1,27 @@
 # Repository bug audit
 
+## Installation: equivalent-width GUI imports
+
+- The equivalent-width GUI imported the obsolete, undeclared `pycont` package
+  and a top-level `iofiles` module. It now uses arcane's packaged utilities.
+- An offscreen Qt regression test imports both GUIs and checks that the
+  equivalent-width table and package-local file utilities are available.
+
+## Installation validation
+
+- `uv build` successfully builds a source archive and then a wheel from that
+  archive. Build output is in `/tmp/arcane-installation-build.log`.
+- Installed the final wheel with all dependencies into a fresh Python 3.12
+  environment at `/tmp/arcane-install-check`. Running the full suite from
+  `/tmp`, outside the source checkout, passes **107 tests**, including both GUIs,
+  real MOOG/Turbospectrum synthesis, and both atmosphere grids. Output is in
+  `/tmp/arcane-installed-wheel-suite.log`.
+- Independently verified `uv pip install -e .` in a second fresh environment,
+  with imports and spectral processing executed outside the checkout.
+- `uv pip check` passes for both environments. `git diff --check` passes.
+- Each issue was fixed on its own branch and merged into `codex-main`; the
+  original `main` branch and the existing user edit to `.gitignore` are preserved.
+
 ## Installation: optional external configuration
 
 - MARCS, AVG3D, and Turbospectrum imports required an existing configuration
