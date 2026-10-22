@@ -16,9 +16,8 @@ from scipy.special import voigt_profile
 from scipy.stats import linregress
 from scipy.optimize import minimize,LinearConstraint
 from .pyqtlinesfit import Ui_Dialog
-from pycont import myspec_utils as utils
 import os 
-import iofiles
+from ..utils import iofiles
 from ..utils import utils
 
 
