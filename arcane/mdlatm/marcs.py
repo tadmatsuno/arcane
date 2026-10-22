@@ -4,18 +4,21 @@ from arcane.utils import utils
 from scipy.interpolate import CubicSpline
 from arcane.mdlatm.base import ModelAtm
 import os
-import json
-import shutil
+from arcane.config import read_config, set_path
 from dataclasses import dataclass
 
 #data_dir = '/mnt/d/model_atm/MARCS/' ## CHANGE THIS 
 
 src_path = os.path.expanduser("~/.arcanesrc")
+data_dir = None
+grid = None
+grid_value = {}
 
 def find_data_dir():
-    global data_dir
+    global data_dir, grid, grid_value
     # This function reads the location of MOOGSILENT from .arcanesrc
-    arcane_config = json.load(open(src_path,"r"))
+    arcane_config = read_config(src_path)
+    data_dir, grid, grid_value = None, None, {}
     if not "marcs_dir" in arcane_config.keys():
         print("marcs_dir is not set in the .arcanesrc file")
         print("Call set_marcs_path to set the path")
@@ -25,32 +28,27 @@ def find_data_dir():
         print("MARCS data directory does not exist at the specified path:{0:s}".format(data_dir))
         print("Call set_marcs_path to set the path")
         return
+    with open(os.path.join(data_dir, 'MARCS_avai.dat')) as stream:
+        for line in stream:
+            key = line[0:10].strip()
+            dtype = int if key == 'teff' else float
+            grid_value[key] = np.array([dtype(val) for val in line[10:].split()])
+    grid = pandas.read_csv(os.path.join(data_dir, 'MARCS_grid.csv'), index_col=None)
     print("MARCS data directory location: {0:s}".format(data_dir))
     return
 
 def set_marcs_path(marcs_path):
-    if os.path.exists(marcs_path):
-        shutil.copy(src_path,src_path+"_old")
-        arcane_setup = json.load(open(src_path,"r"))
-        arcane_setup["marcs_dir"] = marcs_path
-        json.dump(arcane_setup,open(src_path,"w"))
+    set_path(src_path, "marcs_dir", marcs_path)
     find_data_dir()
 
 find_data_dir()
 
-with open(os.path.join(data_dir,'MARCS_avai.dat')) as fout:
-  grid_value = {}
-  for line in fout.readlines():
-    key = line[0:10].strip()
-    if key == 'teff':
-      val = np.array([int(val) for val in line[10:].split()])
-    else:
-      val = np.array([float(val) for val in line[10:].split()])
-    grid_value[key] = val
-
-grid = pandas.read_csv(os.path.join(data_dir,'MARCS_grid.csv'),index_col=None)
+def _require_grid():
+    if grid is None:
+        raise RuntimeError("Configure marcs_dir in ~/.arcanesrc or call set_marcs_path() before using the MARCS grid")
 
 def get_filename1(geometry,teff,logg,mh,alpha=None):
+  _require_grid()
   assert geometry in ['p','s'], 'Geometry has to be either p or s.'
   if alpha is None:
     g1 = grid[(grid['geometry']==geometry)&(grid['teff']==teff)&(grid['logg']==logg)&\
@@ -160,6 +158,7 @@ def get_marcs_mod(teff, logg, mh, alphafe=None, outofgrid_error=False, check_int
     else, the model will also be interpolated in alpha direction. 
     Otherwise, standard composition
   '''
+  _require_grid()
   if logg <= 3.5:
     geometry = 's'
   else:

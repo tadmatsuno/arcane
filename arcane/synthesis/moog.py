@@ -10,7 +10,7 @@ from arcane.utils import utils
 from importlib import import_module
 import tempfile
 from arcane.synthesis.readvald import convert_sigma_alpha_to_gamma,Linelist
-import json
+from arcane.config import read_config, set_path
 import time
 import subprocess
 
@@ -49,11 +49,8 @@ src_path = os.path.expanduser("~/.arcanesrc")
 def find_moogsilent():
     global moog_path
     # This function reads the location of MOOGSILENT from .arcanesrc
-    try:
-        with open(src_path, "r") as config_file:
-            arcane_config = json.load(config_file)
-    except FileNotFoundError:
-        arcane_config = {}
+    arcane_config = read_config(src_path)
+    moog_path = ""
     if not "moog_silent" in arcane_config.keys():
         print("MOOGSILENT is not set in the .arcanesrc file")
         print("Call set_moogsilent_path to set the path")
@@ -67,13 +64,7 @@ def find_moogsilent():
     return
 
 def set_moogsilent_path(moog_path):
-    if os.path.exists(moog_path):
-        shutil.copy(src_path,src_path+"_old")
-        arcane_setup = json.load(open(src_path,"r"))
-        arcane_setup["moog_silent"] = moog_path
-        json.dump(arcane_setup,open(src_path,"w"))
-    else:
-        raise FileNotFoundError("MOOGSILENT does not exist at the specified path:{0:s}".format(moog_path))
+    set_path(src_path, "moog_silent", moog_path)
     find_moogsilent()
 
 find_moogsilent()
@@ -565,6 +556,8 @@ def run_moog(mode, linelist, run_id = '', workdir = '/tmp',
     
     '''
 #    print(os.getcwd(),workdir)
+    if not os.path.isfile(moog_path):
+        raise RuntimeError("Configure moog_silent in ~/.arcanesrc or call set_moogsilent_path() before synthesis")
     os.makedirs(workdir, exist_ok=True)
     flinelist = os.path.join(workdir,"lines.in")#os.path.join(f'line_{run_id}.in')
     fmodelin  = os.path.join(workdir,"model.in")#os.path.join(f'model_{run_id}.in')
