@@ -33,6 +33,42 @@ python3 -m venv .venv
 Python 3.8 or newer is declared supported; Python 3.12 is the tested setup.
 GUI tools need a graphical desktop and the system libraries required by Qt.
 
+### Using arcane from another directory or notebook
+
+Activate the environment where you installed arcane **before** changing directory:
+
+```sh
+source /absolute/path/to/arcane/.venv/bin/activate
+cd /path/to/your/analysis
+python -c "import sys, arcane; from arcane.spectrum import model; print(sys.executable, arcane.__file__)"
+```
+
+If your analysis uses its own virtual environment, install arcane there instead:
+
+```sh
+uv pip install --python /path/to/analysis/.venv/bin/python /absolute/path/to/arcane
+```
+
+For notebooks, select that same environment as the kernel. Check its interpreter
+with `import sys; print(sys.executable)`. After installing or upgrading NumPy or
+SciPy, restart the Python process or notebook kernel before importing arcane.
+An existing process can retain modules from the previous library version while
+loading other modules from the newly installed version.
+
+If you see `No module named 'scipy._lib.array_api_compat'`, first restart the
+process and run the import check above with the affected environment's Python.
+This is a private SciPy module, not an additional arcane dependency. If a fresh
+process still fails, inspect its full traceback and verify the environment with
+`uv pip check --python /path/to/environment/bin/python`. If SciPy's own imports
+fail in that fresh process, repair its installation in that environment:
+
+```sh
+uv pip install --python /path/to/environment/bin/python --reinstall-package scipy scipy
+```
+
+Keep the full traceback and interpreter path if the failure persists; an error
+with the same module name can have different causes.
+
 ### Synthesis programs and atmosphere grids
 
 MOOGSILENT, Turbospectrum, and the large atmosphere grids are installed

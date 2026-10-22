@@ -1,5 +1,25 @@
 # Repository bug audit
 
+## External-directory import investigation
+
+- The repository `.venv` could import arcane from the checkout but failed with
+  `No module named 'arcane'` from `/tmp`: arcane itself had not been installed
+  there. Installed the checkout with `uv pip install --python .venv/bin/python
+  -e .` and verified imports outside the checkout.
+- The reported `No module named 'scipy._lib.array_api_compat'` was not reproduced
+  by fresh arcane/SciPy imports in the repository environment or the installed
+  environment at `~/projects/2610NHproject/.venv`. Both use SciPy 1.18.1, which
+  vendors array-api-compat under `scipy._external`, not the older `_lib` path.
+- A controlled temporary environment loaded SciPy 1.14.1, upgraded its files to
+  1.18.1 while Python remained running, and failed on a later SciPy import with
+  a mixed-version `xp_size` import error. A fresh process immediately succeeded.
+  This establishes a related failure mechanism, not the exact reported cause;
+  the affected process's traceback is still needed to confirm that cause.
+- Documented interpreter selection, installing into an analysis environment,
+  restarting notebook kernels after dependency upgrades, and targeted repair of
+  a damaged SciPy installation. No scientific algorithms or dependency bounds
+  were changed, and no private SciPy compatibility aliases were introduced.
+
 ## Installation: equivalent-width GUI imports
 
 - The equivalent-width GUI imported the obsolete, undeclared `pycont` package
