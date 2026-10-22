@@ -1,5 +1,18 @@
 # Repository bug audit
 
+## Installation: optional external configuration
+
+- MARCS, AVG3D, and Turbospectrum imports required an existing configuration
+  and grids, preventing use on a fresh installation. Imports now tolerate absent
+  settings; grid and synthesis calls explain which setting is required.
+- Path setters assumed the configuration already existed, so they could not
+  perform initial setup. A shared configuration helper creates it on explicit
+  setup, preserves other settings, and retains the existing backup convention.
+- MARCS and AVG3D setters changed the path without reloading grid metadata.
+  They now refresh the associated data together.
+- Regression tests cover missing/partial configurations in fresh interpreters,
+  first-time configuration, preserving settings/backups, and switching grids.
+
 ## Installation: distribution metadata and resources
 
 - The source archive omitted `requirements.txt`, so the wheel built from it

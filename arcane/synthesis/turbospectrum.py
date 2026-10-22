@@ -10,7 +10,7 @@ from arcane.synthesis.linelist import get_atom_num
 #from arcane.utils import utils
 from arcane.mdlatm import marcs
 import pandas
-import json
+from arcane.config import read_config, set_path
 import time
 import subprocess
 from importlib import import_module
@@ -54,11 +54,13 @@ ts_nocheck_input = {"ABUND_SOURCE":"ABUND_SOURCE",
 ts_path = ""
 home_path = os.path.expanduser("~")
 src_path = os.path.join(home_path,".arcanesrc")
+babsma_path = bsyn_path = DATA_path = ""
 
 def find_turbospectrumfiles():
     global babsma_path, bsyn_path, DATA_path
     # This function reads the location of Turbospectrum files from the .arcanesrc file
-    arcane_config = json.load(open(src_path,"r"))
+    arcane_config = read_config(src_path)
+    babsma_path = bsyn_path = DATA_path = ""
     if not "turbospectrum_root" in arcane_config.keys():
         print("The root directory for Turbospectrum is not set in the .arcanesrc file")
         print("Call set_turbospectrum_path to set the path")
@@ -105,11 +107,7 @@ def find_turbospectrumfiles():
     return
 
 def set_turbospectrum_path(ts_path):
-    if os.path.exists(ts_path):
-        shutil.copy(src_path,src_path+"_old")
-        arcane_setup = json.load(open(src_path,"r"))
-        arcane_setup["turbospectrum_root"] = ts_path
-        json.dump(arcane_setup,open(src_path,"w"))
+    set_path(src_path, "turbospectrum_root", ts_path)
     find_turbospectrumfiles()
 
 find_turbospectrumfiles()
@@ -447,6 +445,9 @@ def run_turbospectrum(mode,
     mode : str
         'babsma', 'syn'
     '''
+    if not (os.path.isfile(babsma_path) and os.path.isfile(bsyn_path)
+            and os.path.isdir(DATA_path)):
+        raise RuntimeError("Configure turbospectrum_root in ~/.arcanesrc or call set_turbospectrum_path() before synthesis")
     cwd = os.getcwd()
     
     if wmin is None:
