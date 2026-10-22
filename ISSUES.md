@@ -1,5 +1,19 @@
 # Repository bug audit
 
+## Installation: distribution metadata and resources
+
+- The source archive omitted `requirements.txt`, so the wheel built from it
+  silently declared no dependencies. Dependencies now come from the shared
+  requirements file through `pyproject.toml`, and that file ships in the archive.
+- Building the package wrote `~/.arcanesrc`. The compatibility `setup.py` now
+  delegates to setuptools without modifying user configuration.
+- The wheel omitted the equivalent-width periodic table. Explicit package-data
+  rules now include UI files, all scientific tables, and their references.
+- Added uv/pip installation instructions and an external-data configuration
+  template. Python dependencies and existing package APIs remain unchanged.
+- Validation: `uv build` builds a wheel from the source archive; archive checks
+  confirm all eight dependencies, runtime resources, and configuration template.
+
 ## Approved performance improvement: prepared rebinning geometry
 
 - `RebinPlan` retains pixel edges, widths, chunk ranges, and interpolation
