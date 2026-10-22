@@ -1,0 +1,6 @@
+{
+  "moog_silent": "/absolute/path/to/MOOGSILENT",
+  "turbospectrum_root": "/absolute/path/to/Turbospectrum",
+  "marcs_dir": "/absolute/path/to/MARCS",
+  "avg3d_dir": "/absolute/path/to/AVG3D"
+}

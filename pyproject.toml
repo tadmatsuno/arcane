@@ -1,3 +1,28 @@
 [build-system]
-requires = ["setuptools>=65", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "arcane"
+version = "0.0.1"
+description = "Tools for high-resolution stellar abundance analysis"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [{name = "T. Matsuno"}]
+dynamic = ["dependencies"]
+classifiers = ["Programming Language :: Python :: 3", "Operating System :: OS Independent"]
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+include = ["arcane", "arcane.*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"arcane.continuum" = ["*.ui"]
+"arcane.ew" = ["*.ui", "pnum_symbol.csv"]
+"arcane.utils" = ["tables_atomicmass/*.csv", "tables_isotope/*.csv", "tables_solarabundance/*.csv", "tables_solarabundance/*.txt"]
