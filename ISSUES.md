@@ -1,5 +1,37 @@
 # Repository bug audit
 
+## Saved grids fail to load after a SciPy upgrade
+
+- Reproduced the exact reported `ModuleNotFoundError` in a fresh process with
+  `2509analysis/grids_coase_ts_3300_3500/bd-133442.pkl`. Its Akima interpolators
+  reference `scipy._lib.array_api_compat.numpy._aliases.asarray`; SciPy 1.18
+  moved that package and changed the interpolation object's internal layout.
+  The full traceback identifies pickle compatibility, superseding the earlier
+  unconfirmed running-kernel hypothesis in the investigation below.
+- Added `arcane.synthesis.grid.load_grid(path_or_stream)` to restore historical
+  Akima objects from their exact saved coefficients and knots. Its unpickler
+  handles the specific obsolete function reference locally, without global
+  aliases or modifications to SciPy. Existing cache files are not changed.
+- New `SpectraGrid` pickles store Akima coefficients in arcane-owned state,
+  avoiding these private SciPy references and restoring through public APIs.
+  These new files require the updated arcane version when loading. Persistence
+  of multidimensional RBF interpolators is unchanged.
+- A genuine 7.8 kB SciPy 1.17.1 fixture covers all seven Akima mappings, inverse
+  mappings, and both old and current pickle layouts. Tests also check normal
+  new-pickle loading, exact coefficients, axis/extrapolation preservation, and
+  that recovery never refits the interpolation.
+- Compared a real cached grid using ordinary loading in SciPy 1.17.1 against
+  recovery in 1.18.1. Fluxes are exactly equal for 19 abundance queries and 17
+  depth queries over 20,001 wavelengths, including emission/extrapolation;
+  all saved interpolation coefficients and knots are exactly equal.
+- All seven persistence regression tests pass under both SciPy 1.17.1 and
+  1.18.1. The full suite passes **114 tests**; output is captured in
+  `/tmp/arcane-grid-pickle-final-suite.log`. `git diff --check` passes.
+- Updated the analysis project's `analysis.py:150` to call `grid.load_grid`
+  and installed the updated checkout into `2610NHproject/.venv`. Three real
+  cached grids load and evaluate there, and the old-SciPy reference comparison
+  remains exactly equal. Did not run the full analysis or alter cached grids.
+
 ## External-directory import investigation
 
 - The repository `.venv` could import arcane from the checkout but failed with
