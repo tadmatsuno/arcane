@@ -6,6 +6,9 @@ from arcane.mdlatm.base import ModelAtm
 import os
 from arcane.config import read_config, set_path
 from dataclasses import dataclass
+# need boltzmann constant for ne calculation in krz format
+from astropy.constants import k_B
+kb = k_B.cgs.value
 
 #data_dir = '/mnt/d/model_atm/MARCS/' ## CHANGE THIS 
 
@@ -413,9 +416,7 @@ def write_marcs(filename, marcs_model):
         marcs_model['SiS'][ii],
         marcs_model['Other'][ii]))
 
-
-
-def read_marcs(filename):
+def read_marcs_mod(filename):
   '''
   Read marcs .mod files.
   The output is a dictionary containing the model structure
@@ -554,6 +555,156 @@ def read_marcs(filename):
     read_structure() #  k    C3     CS     SiC   SiC2    NS     SiN    SiO    SO     S2     SiS   Other
     return marcs_model
 
+def read_marcs_krz(filename):
+  assert filename.endswith('.krz'),\
+    'This function is to read .krz files from MARCS'
+  marcs_model = MARCS()
+  marcs_model['filename'] = filename
+  marcs_model['modeltype'] = 'marcs'
+  marcs_model['comment'] = ''
+  # read teff, logg, and model type, and WLSTD from 
+  # T EFF= 5777. GRAV= 4.4  MODEL TYPE= 0 WLSTD= 5000
+  with open(filename,'r') as f:
+    # title line
+    line = f.readline().rstrip()
+    marcs_model['title'] = line
+    # parameter line
+    line = f.readline().rstrip()
+    teff = float(line.split('T EFF=')[1].split('GRAV=')[0])
+    logg = float(line.split('GRAV=')[1].split('MODEL TYPE=')[0])
+    model_type = int(line.split('MODEL TYPE=')[1].split('WLSTD=')[0])
+    wlstd = float(line.split('WLSTD=')[1].split()[0])
+    marcs_model['teff'] = teff
+    marcs_model['logg'] = logg
+#    marcs_model['model_type'] = model_type
+    if model_type < 2:
+       marcs_model['geometry'] = 'plane-parallel'
+    else:
+       marcs_model['geometry'] = 'spherical'
+    marcs_model['reference_wavelength'] = wlstd
+    # opacity switch line
+    line = f.readline().rstrip()
+    marcs_model['opacity_switch'] = [int(l) for l in line[:40].split()]
+    # read abundance
+    abundance = []
+    for i in range(10):
+      line = f.readline().rstrip()
+      abundance.extend([float(ab) for ab in line.split()])
+    ndepth = int(abundance[-1])
+    abundance = abundance[:-1]
+    abundance = [np.log10(ab) if ab > 0 else ab for ab in abundance]
+    abundance = np.array(abundance) 
+    abundance = abundance - (abundance[0]-12)
+    znum = np.arange(1, len(abundance)+1)
+    marcs_model['abundance'] = dict(zip(znum, abundance))
+    marcs_model['ndepth'] = ndepth
+    # read structure
+
+    if model_type in [1,4]:
+      marcs_model["lgTau"] = np.zeros(ndepth)
+    else:
+      marcs_model["RHOX"] = np.zeros(ndepth)
+    marcs_model["T"] = np.zeros(ndepth)
+    marcs_model["ne"] = np.zeros(ndepth)
+    marcs_model["nother"] = np.zeros(ndepth)
+    marcs_model["Density"] = np.zeros(ndepth)
+    if model_type > 2:
+      marcs_model["height"] = np.zeros(ndepth)
+    for i in range(ndepth):
+      line = f.readline().rstrip()
+      xx = [float(x) for x in line.split(",") if x.strip() != '']
+      if model_type in [1,4]:
+        marcs_model["lgTau"][i] = xx[0]
+      else:
+        marcs_model["RHOX"][i] = xx[0]
+      marcs_model["T"][i] = xx[1]
+      marcs_model["ne"][i] = xx[2]
+      marcs_model["nother"][i] = xx[3]
+      marcs_model["Density"][i] = xx[4]
+      if model_type > 2:
+        marcs_model["height"][i] = xx[5]
+    marcs_model["Pe"] = marcs_model["ne"] * kb * marcs_model["T"]
+    marcs_model["Pg"] = (marcs_model["ne"] + marcs_model["nother"]) * kb * marcs_model["T"]
+    return marcs_model
+     
+
+def write_krz(filename, model, 
+    iscol1RHOX = True,
+    opacity_flag = [1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,0,0,0,0],
+    title = "user generated model atmosphere in .krz format",
+    reference_wavelength = 5000):
+    '''
+    Write a model atmosphere to a file in the Kurucz format.
+    '''
+    required_keys = ['teff', 'logg','geometry', 'abundance',  'T', 'ne', 'nother', 'Density','ndepth']
+    for key in required_keys:
+        if key not in model.keys():
+            raise ValueError(f'Missing required key: {key}')
+    if iscol1RHOX:
+        assert 'RHOX' in model.keys(), 'Missing required key: RHOX'
+        if model['geometry'].startswith('s'):
+            model_type = 3
+        elif model['geometry'].startswith('p'):
+            model_type = 0
+        else:
+            raise ValueError(f'Unknown geometry: {model["geometry"]}')
+    else:
+        assert 'lgTau' in model.keys(), 'Missing required key: lgTau'
+        if model['geometry'].startswith('s'):
+            model_type = 4
+        elif model['geometry'].startswith('p'):
+            model_type = 1
+        else:
+            raise ValueError(f'Unknown geometry: {model["geometry"]}')  
+        assert 'height' in model.keys(), 'Missing required key: height'
+
+    with open(filename, 'w') as f:
+        f.write(f'{title}\n')
+        f.write(f'T EFF={model["teff"]:5.0f} GRAV={model["logg"]:5.2f} MODEL TYPE= {model_type:2d} WLSTD={int(reference_wavelength):5d}')
+        if model['geometry'].startswith('s'):
+            f.write(f' SPHERICAL, RADIUS={model["radius"]:10.3e} cm')
+        f.write('\n')
+        f.write(" ".join([f'{int(flag):1d}' for flag in opacity_flag]) + '\n')
+        
+        abundances = np.zeros(99)
+        for i in range(99):
+            abundances[i] = model['abundance'].get(i+1, -99)
+        abundances -= np.log10(np.sum(10**abundances))
+        abundances[0] = 10.**abundances[0]
+        abundances[1] = 10.**abundances[1]
+        for i in range(10):
+            line = ''
+            jstart = 0
+            jend = 10
+            if i == 0:
+                line += f' {abundances[0]:6.3f} {abundances[1]:6.3f}'
+                jstart = 2
+            if i == 9:
+                jend = 9
+            for j in range(jstart,jend):
+                line += f' {abundances[i*10+j]:6.2f}'
+            if i == 9:
+                line += f' {model["ndepth"]:3d}'
+            f.write(line + '\n')
+        for i in range(model['ndepth']):
+            if iscol1RHOX:
+                line = f' {model["RHOX"][i]:15.9e},'
+            else:
+                line = f' {10**model["lgTau"][i]:15.9e},'
+            line += f'{model["T"][i]:8.1f}, {model["ne"][i]:11.5e}, {model["nother"][i]:11.5e}, {model["Density"][i]:13.5e},'
+            if model['geometry'].startswith('s'):
+                line += f' {model["height"][i]:13.5e}'
+            f.write(line + '\n')
+
+
+def read_marcs(filename, format="mod"):
+    assert format in ["mod","krz"],"Only mod and krz formats are supported"
+    if format == "mod":
+        return read_marcs_mod(filename)
+    else:
+        return read_marcs_krz(filename)
+
+# For backward compatibility, read_marcs is an alias for read_marcs_mod
 read_model = read_marcs
 
 
@@ -563,5 +714,13 @@ class MARCS(ModelAtm):
   '''
   def __init__(self, *args, **kwargs):
     super(MARCS, self).__init__(*args, **kwargs)
-  def write(self,filename):
-    write_marcs(filename,self)
+  def write(self,filename, format="marcs"):
+    assert format in ["marcs","krz"],"Only marcs and krz formats are supported"
+    if format == "marcs":
+        write_marcs(filename,self)
+    else:
+        self["ne"] = self["Pe"] / kb / self["T"]
+        self["ngas"] = self["Pg"] / kb / self["T"]
+        self["nother"] = self["ngas"] - self["ne"]
+        write_krz(filename,self)
+
